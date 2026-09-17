@@ -1,4 +1,5 @@
 {
+  "action_count": 29,
   "can_call_foreman": false,
   "corrections": [
     0,
@@ -37,6 +38,13 @@
     "red_crossing": false,
     "red_witness": [],
     "safe": true
+  },
+  "last_action": {
+    "action": "tutorial_complete",
+    "floor_dark": true,
+    "payload": {},
+    "sequence": 29,
+    "stage_id": "graduation_5x5"
   },
   "lit_blue": [],
   "lit_red": [],

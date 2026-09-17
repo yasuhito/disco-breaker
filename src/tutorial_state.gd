@@ -175,6 +175,7 @@ func semantic_state() -> Dictionary:
 	var correction_values: Array[int] = []
 	for value in corrections:
 		correction_values.append(value)
+	var last_action: Dictionary = trace[-1].duplicate(true) if not trace.is_empty() else {}
 	return {
 		"schema": "disco-breaker-tutorial-state.v1",
 		"stage": stage_index + 1,
@@ -190,6 +191,8 @@ func semantic_state() -> Dictionary:
 		"floor_dark": is_dark(),
 		"can_call_foreman": can_call_foreman(),
 		"inspection": inspection.duplicate(true),
+		"action_count": trace.size(),
+		"last_action": last_action,
 	}
 
 

@@ -88,7 +88,7 @@ func _test_graduation() -> void:
 
 func _test_semantic_contract() -> void:
 	var state := Tutorial.new().semantic_state()
-	for key in ["schema", "stage", "stage_id", "corrections", "lit_red", "lit_blue", "floor_dark", "inspection"]:
+	for key in ["schema", "stage", "stage_id", "corrections", "lit_red", "lit_blue", "floor_dark", "inspection", "action_count", "last_action"]:
 		_expect(state.has(key), "semantic state missing %s" % key)
 	_expect(String(state.schema) == "disco-breaker-tutorial-state.v1", "semantic schema version")
 

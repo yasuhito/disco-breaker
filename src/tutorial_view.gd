@@ -266,7 +266,7 @@ func _draw_footer() -> void:
 	_secondary_rect = Rect2(18, 716, 354, 38)
 	if model.dialogue_visible:
 		_draw_dialogue()
-		_draw_button(_primary_rect, "もう一度" if model.finished else "OK", PINK, true)
+		_draw_button(_primary_rect, "REPLAY" if model.finished else "OK", PINK, true)
 		return
 	if model.result_visible:
 		_draw_result()
