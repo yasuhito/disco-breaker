@@ -1,0 +1,8 @@
+.godot/
+build/*
+!build/.gdignore
+artifacts/*.png
+artifacts/*.import
+artifacts/browser-*.txt
+!artifacts/.gdignore
+!artifacts/tutorial-*.png
