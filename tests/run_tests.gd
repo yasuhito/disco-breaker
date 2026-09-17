@@ -2,6 +2,7 @@ extends SceneTree
 
 const Tutorial := preload("res://src/tutorial_state.gd")
 const Inspection := preload("res://src/inspection_semantics.gd")
+const CopyLayout := preload("res://src/text_layout.gd")
 
 var failures: Array[String] = []
 
@@ -13,8 +14,9 @@ func _init() -> void:
 	_test_crossing_trap()
 	_test_graduation()
 	_test_semantic_contract()
+	_test_foreman_copy_wraps()
 	if failures.is_empty():
-		print("PASS: 6 tutorial tests")
+		print("PASS: 7 tutorial tests")
 		quit(0)
 	else:
 		for failure in failures:
@@ -89,6 +91,30 @@ func _test_semantic_contract() -> void:
 	for key in ["schema", "stage", "stage_id", "corrections", "lit_red", "lit_blue", "floor_dark", "inspection"]:
 		_expect(state.has(key), "semantic state missing %s" % key)
 	_expect(String(state.schema) == "disco-breaker-tutorial-state.v1", "semantic schema version")
+
+
+func _test_foreman_copy_wraps() -> void:
+	var font := ThemeDB.fallback_font
+	var model := Tutorial.new()
+	var copy: Array[String] = []
+	var coach_copy: Array[String] = []
+	for stage in model.stages():
+		var coach := String(stage.coach)
+		copy.append(coach)
+		coach_copy.append(coach)
+	copy.append_array([
+		"All six lessons complete!\nThe dance floor is in good hands.",
+		"The flicker is gone. Nice work!",
+		"The crossed wires stay inside. Safe!",
+		"Red reaches the other side!",
+		"Full-size floor is safe!",
+	])
+	for text in copy:
+		var font_size := 18 if text in coach_copy else 17
+		var width := 218.0 if font_size == 18 else 224.0
+		var lines := CopyLayout.wrap_lines(font, text, font_size, width)
+		_expect(CopyLayout.fits(font, lines, font_size, width), "foreman copy exceeds its text column: %s" % text)
+		_expect(lines.size() <= 3, "foreman copy exceeds three visible lines: %s" % text)
 
 
 func _expect(condition: bool, message: String) -> void:

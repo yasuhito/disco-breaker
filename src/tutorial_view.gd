@@ -1,6 +1,7 @@
 extends Control
 
 const Tutorial := preload("res://src/tutorial_state.gd")
+const CopyLayout := preload("res://src/text_layout.gd")
 const FOREMAN := preload("res://assets/foreman.svg")
 
 const DESIGN_SIZE := Vector2(390, 844)
@@ -341,8 +342,8 @@ func _draw_text(text: String, position: Vector2, font_size: int, color: Color) -
 
 func _draw_multiline(text: String, position: Vector2, font_size: int, color: Color, width: float) -> void:
 	var line_y := position.y
-	for paragraph in text.split("\n"):
-		draw_string(ThemeDB.fallback_font, Vector2(position.x, line_y), paragraph, HORIZONTAL_ALIGNMENT_LEFT, width, font_size, color)
+	for line in CopyLayout.wrap_lines(ThemeDB.fallback_font, text, font_size, width):
+		draw_string(ThemeDB.fallback_font, Vector2(position.x, line_y), line, HORIZONTAL_ALIGNMENT_LEFT, width, font_size, color)
 		line_y += font_size + 8
 
 

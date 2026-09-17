@@ -60,6 +60,7 @@ click_canvas 195 309
 assert_state "window.discoBreakerState.floor_dark"
 click_canvas 195 793
 
+chrome-devtools-axi screenshot artifacts/tutorial-dialogue-wrap.png >/dev/null
 click_canvas 195 793
 click_canvas 195 309
 click_canvas 195 309
@@ -70,6 +71,7 @@ click_canvas 195 793
 assert_state "window.discoBreakerState.can_call_foreman"
 click_canvas 195 793
 assert_state "window.discoBreakerState.inspection.safe"
+chrome-devtools-axi screenshot artifacts/tutorial-inspection-dialogue.png >/dev/null
 click_canvas 195 793
 
 click_canvas 195 793
