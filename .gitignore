@@ -1,8 +1,10 @@
 .godot/
 build/*
 !build/.gdignore
+node_modules/
 artifacts/*.png
 artifacts/*.import
 artifacts/browser-*.txt
+artifacts/ci-e2e/
 !artifacts/.gdignore
 !artifacts/tutorial-*.png

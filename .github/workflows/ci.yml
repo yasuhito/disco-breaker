@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-build-e2e:
+    name: Test, export, and browser E2E
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Cache Godot editor and export templates
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.local/share/godot-ci
+            ~/.local/share/godot/export_templates
+          key: godot-4.7.2-stable-${{ runner.os }}
+
+      - name: Install pinned Godot 4.7.2
+        run: ./scripts/setup_godot_ci.sh
+
+      - name: Run tests, headless driver, and deterministic Web export
+        run: ./scripts/check.sh
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+
+      - name: Install CI E2E dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Serve Web export and run browser E2E
+        run: |
+          mkdir -p artifacts
+          python3 -m http.server 8877 --directory build/web >artifacts/ci-http-server.txt 2>&1 &
+          server_pid=$!
+          for _attempt in 1 2 3 4 5; do
+            if curl --fail --silent http://127.0.0.1:8877/index.html >/dev/null; then
+              break
+            fi
+            sleep 0.2
+          done
+          curl --fail --silent http://127.0.0.1:8877/index.html >/dev/null
+          set +e
+          node scripts/ci_e2e.mjs
+          status=$?
+          set -e
+          kill "$server_pid" 2>/dev/null || true
+          exit $status
+
+      - name: Upload browser E2E screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: browser-e2e-screenshots
+          path: artifacts/ci-e2e/
+          if-no-files-found: ignore
+          retention-days: 7
