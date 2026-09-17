@@ -1,0 +1,8 @@
+{
+  "name": "disco-breaker-ci",
+  "private": true,
+  "description": "CI-only browser E2E harness for the DISCO BREAKER tutorial Web export",
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
