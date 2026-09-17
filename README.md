@@ -39,7 +39,7 @@ The Web export is static and requires no application backend. A basic static hos
 
 Set `DISCO_BREAKER_REDUCED_MOTION=1` for deterministic native captures without animation. The Web build also honors the browser's `prefers-reduced-motion` setting.
 
-`scripts/browser_e2e.sh` is the local-development E2E loop and depends on `chrome-devtools-axi`, which is not available on GitHub-hosted runners. CI instead runs `scripts/ci_e2e.mjs`, a Playwright port of the same canvas input-injection surface and `window.discoBreakerState` assertions (`npm ci`, `npx playwright install --with-deps chromium`); both drive every tutorial control and reject console errors.
+`scripts/browser_e2e.sh` is the local-development E2E loop and depends on `chrome-devtools-axi`, which is not available on GitHub-hosted runners. CI instead runs `scripts/ci_e2e.mjs`, a Playwright port of the same canvas input-injection surface and `window.discoBreakerState` assertions (`npm ci`, `npx playwright install --with-deps chromium`); both drive every tutorial control, and CI rejects console errors.
 
 ## Scope
 
