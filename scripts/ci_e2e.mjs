@@ -157,11 +157,39 @@ try {
   await clickCanvas(195, 793);
   await assertState("state.stage_id === 'red_one_tap' && !state.finished", "replay resets to stage 1");
 
+  await page.goto(baseUrl);
+  await page.waitForTimeout(4000);
+  await assertState("state.stage_id === 'red_one_tap'", "optional skip run opens on stage 1");
+  await clickCanvas(195, 793);
+  await clickCanvas(195, 309);
+  await clickCanvas(195, 793);
+  await clickCanvas(195, 793);
+  await clickCanvas(195, 309);
+  await clickCanvas(195, 309);
+  await clickCanvas(195, 793);
+  await clickCanvas(195, 793);
+  await clickCanvas(195, 309);
+  await clickCanvas(195, 309);
+  await clickCanvas(195, 309);
+  await clickCanvas(195, 793);
+  await clickCanvas(195, 793);
+  await clickCanvas(195, 793);
+  await clickCanvas(195, 793);
+  await clickCanvas(195, 793);
+  await clickCanvas(195, 793);
+  await clickCanvas(195, 793);
+  await assertState("state.stage_id === 'graduation_5x5' && !state.finished", "optional skip run reaches graduation");
+  await clickCanvas(195, 735);
+  await assertState("state.finished && state.last_action.action === 'skip_graduation'", "optional graduation skip finishes tutorial");
+  await captureState("optional-graduation-skipped");
+  await clickCanvas(195, 793);
+  await assertState("state.stage_id === 'red_one_tap' && !state.finished", "optional skip replay resets to stage 1");
+
   if (consoleErrors.length > 0) {
     throw new Error(`console errors detected:\n${consoleErrors.join("\n")}`);
   }
 
-  console.log(`PASS: browser audited ${captureIndex} tutorial states and every connection box`);
+  console.log(`PASS: browser audited ${captureIndex} tutorial states, every connection box, and optional skip`);
 } finally {
   await browser.close();
 }

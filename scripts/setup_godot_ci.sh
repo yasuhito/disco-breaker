@@ -4,15 +4,16 @@
 # always builds with the same engine as local development.
 set -euo pipefail
 
-godot_version="4.7.2-stable"
+godot_release="4.7.2-stable"
+godot_template_version="4.7.2.stable"
 editor_zip="Godot_v4.7.2-stable_linux.x86_64.zip"
 editor_sha256="cadd3204e728a35d3f13adb7fd0d7902636b79f6b95c40c265eb73b6c35329e4"
 templates_tpz="Godot_v4.7.2-stable_export_templates.tpz"
 templates_sha256="f298490b8d44d934be425a5a65a51bf15f422428b229a06a6e11d9ffea248011"
-release_url="https://github.com/godotengine/godot/releases/download/${godot_version}"
+release_url="https://github.com/godotengine/godot/releases/download/${godot_release}"
 
 install_root="${GODOT_INSTALL_ROOT:-$HOME/.local/share/godot-ci}"
-templates_dir="$HOME/.local/share/godot/export_templates/${godot_version}"
+templates_dir="$HOME/.local/share/godot/export_templates/${godot_template_version}"
 
 verify_sha256() {
   local file="$1"
