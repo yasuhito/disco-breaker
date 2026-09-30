@@ -1,6 +1,8 @@
 extends Control
 
 const Tutorial := preload("res://src/tutorial_state.gd")
+const Rewards := preload("res://src/reward_feedback.gd")
+const Sounds := preload("res://src/reward_sound.gd")
 const Flicker := preload("res://src/fault_flicker.gd")
 const CopyLayout := preload("res://src/text_layout.gd")
 const FONT := preload("res://assets/fonts/Roboto-Regular.ttf")
@@ -34,22 +36,53 @@ var _last_state_json := ""
 var _definition: Dictionary = {}
 var _stage_count := 0
 var _glass_reflection: GradientTexture2D
+var _glass_light: GradientTexture2D
 var _style_cache: Dictionary = {}
 var _tap_node_index := -1
 var _tap_age := 1.0
 var _button_age := 1.0
-var _success_age := 1.0
-var _was_result := false
+var _rewards := Rewards.new()
+var _reward_age := 2.0
+var _audio := AudioStreamPlayer.new()
+var _sting: AudioStreamWAV
+var _final_sting: AudioStreamWAV
+var _muted := false
+var _sound_starts := 0
+var _mute_rect := Rect2(290, 14, 76, 44)
 
 
 func _ready() -> void:
+	# Shared, quiet diagonal reflection across the entire glass floor.
 	_glass_reflection = GradientTexture2D.new()
-	_glass_reflection.width = 8
-	_glass_reflection.height = 128
-	_glass_reflection.fill_from = Vector2(0, 0)
-	_glass_reflection.fill_to = Vector2(0, 1)
+	_glass_reflection.width = 256
+	_glass_reflection.height = 256
+	_glass_reflection.fill_from = Vector2.ZERO
+	_glass_reflection.fill_to = Vector2.ONE
 	_glass_reflection.gradient = Gradient.new()
-	_glass_reflection.gradient.colors = PackedColorArray([Color(1, 0.94, 1, 0.1), Color(1, 0.94, 1, 0)])
+	_glass_reflection.gradient.offsets = PackedFloat32Array([0.0, 0.23, 0.27, 0.38, 0.42, 0.70, 1.0])
+	_glass_reflection.gradient.colors = PackedColorArray([
+		Color(0.86, 0.93, 1, 0.02), Color(0.86, 0.93, 1, 0.02),
+		Color(0.86, 0.93, 1, 0.15), Color(0.86, 0.93, 1, 0.06),
+		Color(0.86, 0.93, 1, 0.01), Color(0.86, 0.93, 1, 0.01),
+		Color(0.86, 0.93, 1, 0.05)])
+	_glass_light = GradientTexture2D.new()
+	_glass_light.width = 64
+	_glass_light.height = 64
+	_glass_light.fill = GradientTexture2D.FILL_RADIAL
+	_glass_light.fill_from = Vector2(0.5, 0.5)
+	_glass_light.fill_to = Vector2(1.15, 0.5)
+	_glass_light.gradient = Gradient.new()
+	_glass_light.gradient.offsets = PackedFloat32Array([0.0, 0.55, 1.0])
+	_glass_light.gradient.colors = PackedColorArray([Color(1, 1, 1, 0.50), Color(1, 1, 1, 0.32), Color(1, 1, 1, 0)])
+	_sting = Sounds.make_sting()
+	_final_sting = Sounds.make_sting(true)
+	_audio.volume_db = -8.0
+	add_child(_audio)
+	var preferences := ConfigFile.new()
+	if preferences.load("user://audio.cfg") == OK:
+		_muted = bool(preferences.get_value("audio", "muted", false))
+	if OS.has_feature("web"):
+		_muted = bool(JavaScriptBridge.eval("(() => { try { return localStorage.getItem('disco-breaker-muted') === '1'; } catch (_) { return false; } })()"))
 	set_process(true)
 	set_process_input(true)
 	resized.connect(queue_redraw)
@@ -65,11 +98,8 @@ func _process(delta: float) -> void:
 		_elapsed += delta
 		_tap_age += delta
 		_button_age += delta
-		_success_age += delta
+		_reward_age += delta
 		queue_redraw()
-	if model.result_visible and not _was_result:
-		_success_age = 0.0
-	_was_result = model.result_visible
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -114,6 +144,9 @@ func semantic_state() -> Dictionary:
 
 
 func _handle_design_tap(point: Vector2) -> void:
+	if _mute_rect.has_point(point):
+		_toggle_mute()
+		return
 	if _primary_rect.has_point(point) or _secondary_rect.has_point(point):
 		_button_age = 0.0
 	if model.dialogue_visible or model.finished:
@@ -176,7 +209,7 @@ func _draw_app_bar() -> void:
 				var tile := Rect2(36 + column * 5, 33 + row * 5, 3.5, 3.5)
 				draw_rect(tile, Color("#ead9b9") if (row + column) % 3 == 0 else Color("#9383a0"))
 	_draw_text("DISCO BREAKER", Vector2(63, 42), 17, PAPER, true)
-	_draw_text("TUTORIAL", Vector2(293, 40), 10, Color("#bfaccb"), true)
+	_draw_mute_toggle()
 	draw_line(Vector2(24, 67), Vector2(366, 67), Color(1, 0.87, 0.68, 0.12), 1)
 	var titles := {
 		"red_one_tap": "The red connection",
@@ -210,46 +243,67 @@ func _draw_board() -> void:
 	_board_rect = Rect2((390.0 - board_size) * 0.5, board_top, board_size, board_size)
 	draw_texture_rect(HOUSING, Rect2(_board_rect.position - Vector2(19, 19), _board_rect.size + Vector2(38, 52)), false)
 	var spacing := board_size / float(grid_size)
-	for component in [Tutorial.RED, Tutorial.BLUE]:
-		var faces: Array = d.red_faces if component == Tutorial.RED else d.blue_faces
-		var lit_checks := model.lit_red_checks() if component == Tutorial.RED else model.lit_blue_checks()
-		var color := RED if component == Tutorial.RED else BLUE
-		for check in faces.size():
-			var face: Dictionary = faces[check]
-			var center: Vector2 = _board_rect.position + face.center * spacing
-			var extent: Vector2 = face.extent * spacing
-			var lit := lit_checks.has(check)
-			var lamp_key: int = model.stage_index * 1000 + grid_size * 100 + component * 40 + check
-			var intensity := Flicker.brightness(lamp_key, _elapsed, reduced_motion) if lit else 0.0
-			_draw_panel(Rect2(center - extent * 0.5, extent), color, intensity)
-			if lit:
-				_draw_fault_badge(center, color, spacing, intensity)
+	var red_checks := model.lit_red_checks()
+	var blue_checks := model.lit_blue_checks()
+	# Draw leaked light below all panels, so it cannot relight a dark neighbor.
+	for layer in 2:
+		for component in [Tutorial.RED, Tutorial.BLUE]:
+			var faces: Array = d.red_faces if component == Tutorial.RED else d.blue_faces
+			var lit_checks := red_checks if component == Tutorial.RED else blue_checks
+			var color := RED if component == Tutorial.RED else BLUE
+			for check in faces.size():
+				var face: Dictionary = faces[check]
+				var center: Vector2 = _board_rect.position + face.center * spacing
+				var extent: Vector2 = face.extent * spacing
+				var lit := lit_checks.has(check)
+				var lamp_key: int = model.stage_index * 1000 + grid_size * 100 + component * 40 + check
+				var intensity := Flicker.brightness(lamp_key, _elapsed, reduced_motion) if lit else 0.0
+				var panel := Rect2(center - extent * 0.5, extent)
+				if layer == 0:
+					if lit:
+						_draw_glass_glow(panel, color, intensity)
+				else:
+					_draw_panel(panel, color, intensity, lit)
+	_draw_reward_wave()
 	_draw_nodes(grid_size, spacing)
 	if not model.inspection.is_empty() and not bool(model.inspection.safe):
 		_draw_witness(grid_size, spacing)
 
 
-func _draw_panel(rect: Rect2, color: Color, intensity: float) -> void:
+func _draw_glass_glow(rect: Rect2, color: Color, intensity: float) -> void:
+	# Thin nested contours soften all four edges without fullscreen bloom.
+	# This is the fault lamp's envelope, separate from the success sweep.
+	for spread in range(8, 0, -1):
+		var alpha := intensity * 0.42 * pow(1.0 - float(spread) / 10.0, 2.0)
+		draw_rect(rect.grow(float(spread) - 1.0), Color(color, alpha), false, 1)
+
+
+func _draw_panel(rect: Rect2, color: Color, intensity: float, lit: bool) -> void:
 	var glass := rect.grow(-2)
-	draw_style_box(_rounded_box(Color("#090b12"), 7), glass.grow(2))
-	# Diffused glass, a bevel and a reflection, with the same lamp envelope as its badge.
-	var base := Color("#19202b").lerp(color.darkened(0.32), 0.10 + intensity * 0.85)
+	draw_rect(rect, Color("#090c14"))
+	# Light lives below a flush glass sheet, never on a raised lamp at its center.
+	# A faint colored edge persists through a dropout, but disappears on repair.
+	var base := Color("#192431")
+	if lit:
+		base = base.lerp(color.darkened(0.52), 0.24 + intensity * 0.54)
 	draw_rect(glass, base)
-	draw_texture_rect(_glass_reflection, glass, false)
-	draw_rect(glass, Color(color, 0.16 + intensity * 0.40), false, 1)
-	draw_line(glass.position + Vector2(2, 2), glass.position + Vector2(glass.size.x - 2, 2), Color(1, 0.96, 1, 0.10 + intensity * 0.17), 1)
-	# Etched horizontal lines distinguish the glass checks from circular tap sockets.
-	for offset in [-5, 5]:
-		draw_line(glass.get_center() + Vector2(-glass.size.x * 0.25, offset), glass.get_center() + Vector2(glass.size.x * 0.25, offset), Color(color, 0.10), 1)
-
-
-func _draw_fault_badge(center: Vector2, color: Color, spacing: float, intensity: float) -> void:
-	# This tiny persistent lamp core means a dropout cannot be mistaken for a repair.
-	for ring in range(3, 0, -1):
-		_circle(center, 5.0 + ring * 4, Color(color, (0.015 + intensity * 0.025) / ring))
-	_circle(center + Vector2(0, 1), 5, Color("#12121c"))
-	_circle(center, 3.5, Color(color, 0.52 + intensity * 0.48))
-	_circle(center + Vector2(-0.6, -0.8), 1.2, Color(1, 0.98, 1, intensity * 0.9))
+	if lit:
+		draw_texture_rect(_glass_light, glass.grow(-2), false, Color(color, 0.14 + intensity * 0.84))
+		for inset in range(1, 5):
+			draw_rect(glass.grow(-float(inset)), Color(color, intensity * 0.16 * (1.0 - float(inset) / 5.0)), false, 1)
+	var reflection_region := Rect2((glass.position - _board_rect.position) / _board_rect.size * 256.0, glass.size / _board_rect.size * 256.0)
+	draw_texture_rect_region(_glass_reflection, glass, reflection_region)
+	var rim := Color(color, 0.38 + intensity * 0.25) if lit else Color(0.42, 0.58, 0.70, 0.24)
+	draw_rect(glass.grow(-2), rim, false, 1)
+	# The same top-left highlight and bottom-right refraction on every panel.
+	var top_left := glass.position + Vector2(0.5, 0.5)
+	var top_right := Vector2(glass.end.x - 0.5, glass.position.y + 0.5)
+	var bottom_left := Vector2(glass.position.x + 0.5, glass.end.y - 0.5)
+	var bottom_right := glass.end - Vector2(0.5, 0.5)
+	draw_line(top_left, top_right, Color(0.78, 0.9, 1, 0.29), 1)
+	draw_line(top_left, bottom_left, Color(0.67, 0.84, 0.96, 0.19), 1)
+	draw_line(bottom_left, bottom_right, Color(0.03, 0.07, 0.12, 0.9), 2)
+	draw_line(top_right, bottom_right, Color(0.03, 0.07, 0.12, 0.8), 2)
 
 
 func _draw_nodes(grid_size: int, spacing: float) -> void:
@@ -328,6 +382,8 @@ func _draw_footer() -> void:
 		var label := "TUTORIAL COMPLETE" if _definition.id == "graduation_3x3" else "NEXT"
 		if _definition.id == "boundary_single":
 			label = ("TRY BLUE" if model.boundary_phase == 0 else "NEXT") if _result_safe() else "TRY AGAIN"
+		if model.stage_index != 4 and not _result_safe():
+			label = "TRY AGAIN"
 		_draw_button(_primary_rect, label, GREEN if _result_safe() else PINK, true)
 		return
 	if _definition.id == "graduation_3x3":
@@ -378,7 +434,7 @@ func _draw_result() -> void:
 
 
 func _result_safe() -> bool:
-	return model.inspection.is_empty() or bool(model.inspection.get("safe", true))
+	return not model.inspection.is_empty() and bool(model.inspection.get("safe", false))
 
 
 func _draw_button(rect: Rect2, label: String, color: Color, enabled: bool) -> void:
@@ -436,7 +492,19 @@ func _text_width(text: String, font_size: int, bold := false) -> float:
 func _publish_semantics() -> void:
 	_definition = model.definition()
 	_stage_count = model.stages().size()
-	var state_json := JSON.stringify(model.semantic_state())
+	var state := model.semantic_state()
+	var event := _rewards.observe(state)
+	if event == "reset":
+		_reward_age = 2.0
+		_audio.stop()
+	elif not event.is_empty():
+		_reward_age = 0.0
+		if Rewards.wants_sound(event, _muted, AudioServer.is_bus_mute(0)):
+			_audio.stream = _final_sting if event == "finale" else _sting
+			_audio.play()
+			_sound_starts += 1
+	_publish_feedback()
+	var state_json := JSON.stringify(state)
 	if state_json == _last_state_json:
 		return
 	_last_state_json = state_json
@@ -453,10 +521,17 @@ func _surface(rect: Rect2, base: Color, edge: Color, radius: int, depth: float) 
 
 
 func _draw_portrait(center: Vector2, light: bool) -> void:
+	var celebrating := _rewards.kind in ["success", "finale"] and model.result_visible and _result_safe()
+	if celebrating and not reduced_motion and _reward_age < 0.45:
+		center.y -= sin(PI * _reward_age / 0.45) * 7.0
 	_circle(center + Vector2(0, 3), 41, Color(0.12, 0.07, 0.18, 0.2))
 	_circle(center, 41, Color("#c0a47c") if light else Color("#63516a"))
 	_circle(center, 38, Color("#fff2d5") if light else Color("#e5be88"))
 	draw_texture_rect(FOREMAN, Rect2(center - Vector2(35, 35), Vector2(70, 70)), false)
+	if celebrating:
+		var badge := center + Vector2(29, 23)
+		_circle(badge, 12, Color("#97dbbb"))
+		draw_polyline(PackedVector2Array([badge + Vector2(-5, 0), badge + Vector2(-1, 4), badge + Vector2(6, -5)]), INK, 2.5, true)
 
 
 func _draw_board_caption() -> void:
@@ -480,10 +555,6 @@ func _draw_board_caption() -> void:
 			_draw_wires(center, 12, index, true)
 		if index < 3:
 			_draw_text("›", center + Vector2(16, 4), 13, Color("#746580"))
-	if safe and not reduced_motion and _success_age < 0.6:
-		var alpha := (1.0 - _success_age / 0.6) * 0.6
-		var rect := _board_rect.grow(18 + _success_age * 6)
-		_outline(rect, Color(GREEN, alpha), 23)
 
 
 func _circle(center: Vector2, radius: float, color: Color, filled := true, width := -1.0, _antialiased := true) -> void:
@@ -500,3 +571,63 @@ func _outline(rect: Rect2, color: Color, radius: int) -> void:
 		box.set_corner_radius_all(radius)
 		_style_cache[key] = box
 	draw_style_box(_style_cache[key], rect)
+
+
+func _draw_reward_wave() -> void:
+	if reduced_motion or _rewards.kind.is_empty():
+		return
+	var finale := _rewards.kind == "finale"
+	var success := _rewards.kind in ["success", "finale"]
+	var duration := 0.85 if finale else 0.45
+	if _reward_age >= duration:
+		return
+	var progress := clampf(_reward_age / duration, 0.0, 1.0)
+	var strength := sin(PI * progress)
+	var tint := Color("#f4ca82") if success else Color("#bed2e5")
+	var y := _board_rect.position.y + 10 + progress * (_board_rect.size.y - 20)
+	# A narrow sweep over the glass, below the sockets; it never relights a syndrome.
+	draw_line(Vector2(_board_rect.position.x + 5, y), Vector2(_board_rect.end.x - 5, y), Color(tint, strength * 0.13), 8, true)
+	draw_line(Vector2(_board_rect.position.x + 5, y), Vector2(_board_rect.end.x - 5, y), Color(tint, strength * 0.45), 1.5, true)
+	if not success:
+		return
+	_outline(_board_rect.grow(17 + progress * 4), Color(tint, (1.0 - progress) * 0.55), 23)
+	var count := 12 if finale else 6
+	for index in count:
+		var angle := TAU * float(index) / count + 0.15
+		var origin := _board_rect.get_center() + Vector2(cos(angle), sin(angle)) * 158
+		var drift := Vector2(cos(angle), sin(angle)) * progress * (15 if finale else 8)
+		var center := origin + drift
+		var radius := (2.8 if finale else 1.8) * (1.0 - progress)
+		_circle(center, maxf(radius, 0.3), Color(tint, strength * 0.7))
+
+
+func _draw_mute_toggle() -> void:
+	_surface(_mute_rect, Color("#302939"), Color("#5e506b"), 12, 2)
+	var center := _mute_rect.position + Vector2(18, 22)
+	draw_colored_polygon(PackedVector2Array([center + Vector2(-7, -3), center + Vector2(-3, -3), center + Vector2(2, -7), center + Vector2(2, 7), center + Vector2(-3, 3), center + Vector2(-7, 3)]), Color("#cfc0d8"))
+	if _muted:
+		draw_line(center + Vector2(-8, -8), center + Vector2(8, 8), Color("#f1b4c3"), 2, true)
+	else:
+		draw_arc(center + Vector2(1, 0), 8, -0.8, 0.8, 10, Color("#cfc0d8"), 1.5, true)
+	_draw_text("OFF" if _muted else "ON", _mute_rect.position + Vector2(39, 27), 11, PAPER, true)
+
+
+func _toggle_mute() -> void:
+	_muted = not _muted
+	if _muted:
+		_audio.stop()
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("try { localStorage.setItem('disco-breaker-muted', '%s'); } catch (_) {}" % ("1" if _muted else "0"))
+	else:
+		var preferences := ConfigFile.new()
+		preferences.set_value("audio", "muted", _muted)
+		preferences.save("user://audio.cfg")
+	queue_redraw()
+
+
+func _publish_feedback() -> void:
+	if OS.has_feature("web"):
+		var feedback := {"kind": _rewards.kind, "event_count": _rewards.event_count,
+			"success_count": _rewards.success_count, "sound_starts": _sound_starts,
+			"muted": _muted, "reduced_motion": reduced_motion}
+		JavaScriptBridge.eval("window.discoBreakerFeedback = %s;" % JSON.stringify(feedback))

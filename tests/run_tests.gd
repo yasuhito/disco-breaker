@@ -2,6 +2,8 @@ extends SceneTree
 
 const Tutorial := preload("res://src/tutorial_state.gd")
 const Inspection := preload("res://src/inspection_semantics.gd")
+const Rewards := preload("res://src/reward_feedback.gd")
+const Sounds := preload("res://src/reward_sound.gd")
 const Flicker := preload("res://src/fault_flicker.gd")
 const CopyLayout := preload("res://src/text_layout.gd")
 
@@ -31,8 +33,11 @@ func _init() -> void:
 	_test_semantic_contract()
 	_test_foreman_copy_wraps()
 	_test_fault_flicker()
+	_test_reward_events()
+	_test_unsafe_rewards_and_retry()
+	_test_reward_audio()
 	if failures.is_empty():
-		print("PASS: 13 tutorial tests")
+		print("PASS: 16 tutorial tests")
 		quit(0)
 	else:
 		for failure in failures:
@@ -301,3 +306,113 @@ func _test_boundary_lesson() -> void:
 	_expect(model.is_dark() and not model.inspect_floor().safe, "boundary still detects logical errors")
 	model.next_stage()
 	_expect(model.stage_index == 5 and model.boundary_phase == 0 and not model.result_visible, "unsafe boundary solution stays available to repair")
+
+
+func _test_reward_events() -> void:
+	var model := Tutorial.new()
+	var rewards := Rewards.new()
+	rewards.observe(model.semantic_state())
+	for taps in [1, 2, 3]:
+		model.confirm_dialogue()
+		rewards.observe(model.semantic_state())
+		for index in taps:
+			model.tap_node(1, 1)
+			var event := rewards.observe(model.semantic_state())
+			_expect((event == "success") == (index == taps - 1), "only the solving tap celebrates")
+		var count := rewards.event_count
+		_expect(rewards.observe(model.semantic_state()).is_empty() and rewards.event_count == count, "repeated redraw never retriggers reward")
+		model.tap_node(1, 1)
+		_expect(rewards.observe(model.semantic_state()).is_empty(), "extra taps on the result never retrigger reward")
+		model.next_stage()
+		rewards.observe(model.semantic_state())
+	model.confirm_dialogue()
+	_expect(rewards.observe(model.semantic_state()).is_empty(), "initial dark floor does not celebrate")
+	model.inspect_floor()
+	_expect(rewards.observe(model.semantic_state()) == "success", "explicit safe inspection celebrates")
+	model.next_stage()
+	rewards.observe(model.semantic_state())
+	model.confirm_dialogue()
+	_expect(rewards.observe(model.semantic_state()).is_empty() and rewards.success_count == 4, "intentional logical trap never celebrates")
+	model.next_stage()
+	rewards.observe(model.semantic_state())
+	for phase in 2:
+		model.confirm_dialogue()
+		rewards.observe(model.semantic_state())
+		for tap in phase + 1:
+			model.tap_node(0, phase * 2)
+			var event := rewards.observe(model.semantic_state())
+			_expect((event == "success") == (tap == phase), "each boundary color has one true success")
+		model.next_stage()
+		rewards.observe(model.semantic_state())
+	model.confirm_dialogue()
+	rewards.observe(model.semantic_state())
+	for node in [Vector2i(1, 1), Vector2i(0, 2), Vector2i(0, 2)]:
+		model.tap_node(node.x, node.y)
+		rewards.observe(model.semantic_state())
+	_expect(rewards.kind == "settled" and rewards.success_count == 6, "final extinction is not yet a passed inspection")
+	model.inspect_floor()
+	_expect(rewards.observe(model.semantic_state()) == "finale", "only verified final inspection gets the larger reward")
+	_expect(rewards.success_count == 7 and rewards.event_count == 8, "full tutorial has seven verified rewards and one neutral extinction")
+	model.next_stage()
+	_expect(rewards.observe(model.semantic_state()) == "reset" and rewards.success_count == 7, "completion does not replay final sound")
+	model.confirm_dialogue()
+	rewards.observe(model.semantic_state())
+	_expect(rewards.kind.is_empty(), "replay clears effects")
+	model.stage_index = 6
+	model._reset_stage()
+	model.confirm_dialogue()
+	rewards.observe(model.semantic_state())
+	model.skip_graduation()
+	rewards.observe(model.semantic_state())
+	_expect(rewards.success_count == 7 and rewards.kind.is_empty(), "skip is never a successful repair reward")
+
+
+func _test_unsafe_rewards_and_retry() -> void:
+	for stage in [0, 6]:
+		var model := Tutorial.new()
+		model.stage_index = stage
+		model._reset_stage()
+		model.confirm_dialogue()
+		var rewards := Rewards.new()
+		rewards.observe(model.semantic_state())
+		for node in [Vector2i(0, 1), Vector2i(2, 1)]:
+			model.tap_node(node.x, node.y)
+			rewards.observe(model.semantic_state())
+		if stage == 6:
+			for tap in 2:
+				model.tap_node(0, 2)
+				rewards.observe(model.semantic_state())
+			model.inspect_floor()
+			rewards.observe(model.semantic_state())
+		_expect(model.is_dark() and not model.inspection.safe, "guided and final logical errors fail inspection")
+		_expect(rewards.success_count == 0 and rewards.kind == "settled", "unsafe dark floor receives no success or success sound")
+		model.next_stage()
+		rewards.observe(model.semantic_state())
+		_expect(model.stage_index == stage and not model.result_visible and not model.finished, "unsafe result stays available to retry")
+		for node in [Vector2i(0, 1), Vector2i(2, 1)]:
+			for tap in 3:
+				model.tap_node(node.x, node.y)
+				rewards.observe(model.semantic_state())
+		model.tap_node(1, 1)
+		rewards.observe(model.semantic_state())
+		if stage == 6:
+			model.inspect_floor()
+			rewards.observe(model.semantic_state())
+		_expect(model.inspection.safe and rewards.success_count == 1, "correcting the retry produces exactly one success")
+
+
+func _test_reward_audio() -> void:
+	for finale in [false, true]:
+		var sound := Sounds.make_sting(finale)
+		var repeated := Sounds.make_sting(finale)
+		_expect(sound.data == repeated.data, "synthesized sound is deterministic")
+		_expect(sound.get_length() < 0.8 and sound.get_length() > 0.3, "reward sound stays brief")
+		var peak := 0
+		for frame in sound.data.size() / 2:
+			peak = maxi(peak, absi(sound.data.decode_s16(frame * 2)))
+		_expect(peak > 1000 and peak < 24000, "sound has audible non-clipping samples")
+		_expect(sound.data.decode_s16(0) == 0 and absi(sound.data.decode_s16(sound.data.size() - 2)) < 10, "sound envelope has quiet endpoints")
+	for event in ["", "settled", "reset", "success", "finale"]:
+		_expect(not Rewards.wants_sound(event, true), "mute suppresses every reward sound")
+		_expect(not Rewards.wants_sound(event, false, true), "master mute is respected")
+		_expect(Rewards.wants_sound(event, false) == (event in ["success", "finale"]), "sound requires a verified success event")

@@ -138,8 +138,9 @@ func tap_node(row: int, column: int) -> bool:
 	corrections[node] = (corrections[node] + 1) % 4
 	_record("tap_node", {"row": row, "column": column, "state": corrections[node]})
 	if stage_index <= 2 and is_dark():
+		inspection = _inspect_residual()
 		result_visible = true
-		_record("lesson_solved", {"stage": definition().id})
+		_record("lesson_solved", {"stage": definition().id, "safe": inspection.safe})
 	if definition().id == "boundary_single" and is_dark():
 		inspect_floor()
 	return true
@@ -152,27 +153,32 @@ func can_call_foreman() -> bool:
 func inspect_floor() -> Dictionary:
 	if stage_index != 4 and not can_call_foreman():
 		return {}
-	var red := _residual_support(RED)
-	var blue := _residual_support(BLUE)
-	var d := definition()
-	inspection = Inspection.inspect(
-		red, blue,
-		PackedInt32Array(d.red_cut), PackedInt32Array(d.blue_cut),
-		PackedInt32Array(d.witness_red), PackedInt32Array(d.witness_blue))
+	inspection = _inspect_residual()
 	result_visible = true
 	_record("inspect", inspection)
 	return inspection
 
 
+func _inspect_residual() -> Dictionary:
+	var red := _residual_support(RED)
+	var blue := _residual_support(BLUE)
+	var d := definition()
+	return Inspection.inspect(
+		red, blue,
+		PackedInt32Array(d.red_cut), PackedInt32Array(d.blue_cut),
+		PackedInt32Array(d.witness_red), PackedInt32Array(d.witness_blue))
+
+
 func next_stage() -> void:
 	if not result_visible:
 		return
+	# Only the intentional trap advances after a failed inspection.
+	if stage_index != 4 and not bool(inspection.get("safe", false)):
+		result_visible = false
+		inspection = {}
+		_record("retry_boundary" if definition().id == "boundary_single" else "retry_floor", {})
+		return
 	if definition().id == "boundary_single":
-		if not bool(inspection.get("safe", false)):
-			result_visible = false
-			inspection = {}
-			_record("retry_boundary", {})
-			return
 		if boundary_phase == 0:
 			boundary_phase = 1
 			_reset_stage()

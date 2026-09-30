@@ -83,7 +83,8 @@ try {
   await cycleGrid3x3("stage1");
   await assertState("state.corrections.every((value) => value === 0)", "stage1 grid returns to neutral after cycling");
   await clickCanvas(195, 309);
-  await assertState("state.result_visible", "stage1 solve reveals result");
+  await assertState("state.result_visible && state.inspection.safe", "stage1 solve is logically safe");
+  if ((await page.evaluate(() => window.discoBreakerFeedback)).success_count !== 1) throw new Error("stage1 reward must fire once");
   await captureState("stage1-success");
   await clickCanvas(195, 793);
 
@@ -165,6 +166,8 @@ try {
   await captureState("stage7-graduation-passed");
   await clickCanvas(195, 793);
   await assertState("state.finished", "tutorial reports finished");
+  const rewards = await page.evaluate(() => window.discoBreakerFeedback);
+  if (rewards.success_count !== 7 || rewards.sound_starts !== 7) throw new Error(`unexpected tutorial rewards: ${JSON.stringify(rewards)}`);
   await captureState("tutorial-complete");
   await clickCanvas(195, 793);
   await assertState("state.stage_id === 'red_one_tap' && !state.finished", "replay resets to stage 1");
