@@ -1,0 +1,65 @@
+[
+  {
+    "source": "/home/yasuhito/Work/oss/firstmate/data/error-outbreak-game-concept-engine-v1/brief.md",
+    "destination": "error-outbreak-game-concept-engine-v1/brief.md",
+    "source_sha256": "2ca81fd36d6ef0213b1b8f266dbfcbf2138fc26678b33e9d5133d221af06859e",
+    "stored_sha256": "ddc8268639e1ebb2cc47499268b93a1c899ce3f9f7c60cd5faf766663b5c49e7",
+    "scope": "product task section only; internal agent setup/lifecycle removed"
+  },
+  {
+    "source": "/home/yasuhito/Work/oss/firstmate/data/error-outbreak-game-concept-engine-v1/launch-brief.md",
+    "destination": "error-outbreak-game-concept-engine-v1/launch-brief.md",
+    "source_sha256": "e9efc0b0cffe9c61e931181be73279492e621f48a3d2fac4a1bc16ae683528f8",
+    "stored_sha256": "304ee6fb2caa31901859f192d5f3cc91b632734ca76a271d14fd4a3724423ddd",
+    "scope": "product task section only; internal agent setup/lifecycle removed"
+  },
+  {
+    "source": "/home/yasuhito/Work/oss/firstmate/data/error-outbreak-game-concept-engine-v1/report.md",
+    "destination": "error-outbreak-game-concept-engine-v1/report.md",
+    "source_sha256": "96b2e68d77f9d09c9089ffdf2fa69f151b57b245a0a4cb5c501c76d41e7373de",
+    "stored_sha256": "96b2e68d77f9d09c9089ffdf2fa69f151b57b245a0a4cb5c501c76d41e7373de",
+    "scope": "unchanged copy"
+  },
+  {
+    "source": "/home/yasuhito/Work/oss/firstmate/data/error-outbreak-syndromeout-rules-visual-v1/brief.md",
+    "destination": "error-outbreak-syndromeout-rules-visual-v1/brief.md",
+    "source_sha256": "5542f2e6f15025feef1b72b9303e1be4706c7ab7b7c11935a618f8f52e261a37",
+    "stored_sha256": "29b98a8ea3679a6710d823e56766151f82e45420ed012e270c1b9833bd44942a",
+    "scope": "product task section only; internal agent setup/lifecycle removed"
+  },
+  {
+    "source": "/home/yasuhito/Work/oss/firstmate/data/error-outbreak-syndromeout-rules-visual-v1/syndromeout-rules.html",
+    "destination": "error-outbreak-syndromeout-rules-visual-v1/syndromeout-rules.html",
+    "source_sha256": "a332a15dc0bebc281cd6a1c1aab08f2c3b03b28d1cf5e61850ca62ae136a1bc7",
+    "stored_sha256": "a332a15dc0bebc281cd6a1c1aab08f2c3b03b28d1cf5e61850ca62ae136a1bc7",
+    "scope": "unchanged copy"
+  },
+  {
+    "source": "/home/yasuhito/Work/oss/firstmate/data/error-outbreak-syndromeout-rules-visual-v1/report.md",
+    "destination": "error-outbreak-syndromeout-rules-visual-v1/report.md",
+    "source_sha256": "f45c3a80538aab34ed9721fb8b7692f27539dbfa4bf8d5e8fb9ff9f0e1b4c009",
+    "stored_sha256": "f45c3a80538aab34ed9721fb8b7692f27539dbfa4bf8d5e8fb9ff9f0e1b4c009",
+    "scope": "unchanged copy"
+  },
+  {
+    "source": "/home/yasuhito/Work/oss/firstmate/data/error-outbreak-syndromeout-rules-visual-v1/launch-brief.md",
+    "destination": "error-outbreak-syndromeout-rules-visual-v1/launch-brief.md",
+    "source_sha256": "0b44e0bbe037f266c44132018a438f81dd052adcc30f6ab7a87dc2b05cc3f90b",
+    "stored_sha256": "4e15233c3536d7c5b1be1cc8c0b57fe8cf2aa1549b686b94b437b0899f6ed2ee",
+    "scope": "product task section only; internal agent setup/lifecycle removed"
+  },
+  {
+    "source": "/home/yasuhito/Work/oss/firstmate/data/error-outbreak-disco-breaker-tutorial-implementation-v1/brief.md",
+    "destination": "error-outbreak-disco-breaker-tutorial-implementation-v1/brief.md",
+    "source_sha256": "ab03d505f28d4dc58b3a57e7b863b0bc836bf0a0721ba3177c6689ad23f5d2e8",
+    "stored_sha256": "ada9e578b102257e2e34530f7b0edbfd5e2812619d92224e30c982aff831a7af",
+    "scope": "product task section only; internal agent setup/lifecycle removed"
+  },
+  {
+    "source": "/home/yasuhito/Work/oss/firstmate/data/error-outbreak-disco-breaker-tutorial-implementation-v1/launch-brief.md",
+    "destination": "error-outbreak-disco-breaker-tutorial-implementation-v1/launch-brief.md",
+    "source_sha256": "32304929eb6bb7a1f09724737acfa4a51fdc696c5eff6a8156ed604ef457780f",
+    "stored_sha256": "8a9b4acbcbf986976f96beb3a081d2ec6e7e48ed561a34f08a38937ce8036a92",
+    "scope": "product task section only; internal agent setup/lifecycle removed"
+  }
+]
