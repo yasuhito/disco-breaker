@@ -47,20 +47,36 @@ func draw(view, elapsed: float, reduced: bool, started: bool, finished: bool) ->
 
 func _lighting(view, time: float) -> void:
 	var center := Vector2(195, 145)
-	# Muted, slow light fans. No flashes or full-screen brightness modulation.
-	for index in 5:
-		var direction := 0.43 + float(index) * 0.55 + sin(time * 0.18 + index) * 0.08
-		var reach := 390.0
-		var left := center + Vector2(cos(direction - 0.026), sin(direction - 0.026)) * reach
-		var right := center + Vector2(cos(direction + 0.026), sin(direction + 0.026)) * reach
-		var tint := BLUE if index % 2 == 0 else RED
-		view.draw_polygon(PackedVector2Array([center, left, right]), PackedColorArray([Color(tint, 0.12), Color(tint, 0), Color(tint, 0)]))
+	# Reflected directions sweep at twice the mirror's angular phase.
+	# Constant luminance and soft edges give movement without strobing.
+	var rotation := time * TAU / 22.0
+	for index in 7:
+		var direction := 0.12 + float(index) * 0.48 + sin(rotation * 2.0 + index * 0.9) * 0.32
+		var tint := [BLUE, Color("#f5cddb"), GOLD][index % 3] as Color
+		_draw_beam(view, center, direction, tint)
 	for i in 18:
 		var angle := time * TAU / 22.0
 		var y := 195.0 + fmod(i * 37.0, 220.0) + sin(angle + i) * 5.0
 		var x := 30.0 + fmod(i * 79.0 + sin(angle + i * 0.7) * 24.0 + 330.0, 330.0)
 		var tint := BLUE if i % 3 == 0 else GOLD
 		view._circle(Vector2(x, y), 0.8 if i % 3 else 1.2, Color(tint, 0.3))
+
+
+func _draw_beam(view, center: Vector2, direction: float, tint: Color) -> void:
+	var along := Vector2(cos(direction), sin(direction))
+	var across := Vector2(-along.y, along.x)
+	var distances := [0.0, 70.0, 200.0, 350.0, 470.0]
+	var strengths := [0.58, 0.48, 0.32, 0.16, 0.0]
+	for segment in 4:
+		var near: Vector2 = center + along * distances[segment]
+		var far: Vector2 = center + along * distances[segment + 1]
+		var near_width: float = 1.5 + distances[segment] * 0.042
+		var far_width: float = 1.5 + distances[segment + 1] * 0.042
+		# Two feathered halves, then a fine luminous core. This is only 12
+		# small polygons per ray, with no offscreen buffers or blur passes.
+		for side in [-1.0, 1.0]:
+			view.draw_polygon(PackedVector2Array([near, near + across * near_width * side, far + across * far_width * side, far]), PackedColorArray([Color(tint, strengths[segment] * 0.42), Color(tint, 0), Color(tint, 0), Color(tint, strengths[segment + 1] * 0.42)]))
+		view.draw_polygon(PackedVector2Array([near - across * near_width * 0.15, near + across * near_width * 0.15, far + across * far_width * 0.15, far - across * far_width * 0.15]), PackedColorArray([Color(tint, strengths[segment]), Color(tint, strengths[segment]), Color(tint, strengths[segment + 1]), Color(tint, strengths[segment + 1])]))
 
 
 func _ball(view, time: float) -> void:
