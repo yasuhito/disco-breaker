@@ -121,10 +121,14 @@ try {
     "state.inspection.red_crossing && !state.inspection.blue_crossing",
     "stage5 crossing trap fails on the red family only",
   );
+  const leak = await page.evaluate(() => window.discoBreakerFeedback);
+  if (!leak.leak_active || leak.leak_events !== 1 || leak.leak_sound_starts !== 1 || JSON.stringify(leak.leak_routes[0].qubits) !== '[1,4,7]' || leak.revealed_hidden['4'] !== 1) throw new Error('trap must reveal the original center X and its real residual route once');
   await captureState("stage5-failure-witness");
   await clickCanvas(195, 793);
 
   await assertState("state.stage === 6 && state.stage_count === 7 && state.stage_id === 'boundary_single' && state.lit_red.length === 1 && state.lit_blue.length === 0", "single red boundary lesson");
+  const afterLeak = await page.evaluate(() => window.discoBreakerFeedback);
+  if (afterLeak.leak_active || afterLeak.leak_routes.length || Object.keys(afterLeak.revealed_hidden).length) throw new Error('next lesson must remove cracks and answer reveal');
   await captureState("stage6-red-intro");
   await clickCanvas(195,793);
   await captureState("stage6-red-ready");

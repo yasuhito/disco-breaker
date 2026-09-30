@@ -1,6 +1,8 @@
 extends Control
 
 const Tutorial := preload("res://src/tutorial_state.gd")
+const Leaks := preload("res://src/leak_feedback.gd")
+const LampGate := preload("res://src/lamp_sound_gate.gd")
 const Rewards := preload("res://src/reward_feedback.gd")
 const Sounds := preload("res://src/reward_sound.gd")
 const Flicker := preload("res://src/fault_flicker.gd")
@@ -48,6 +50,19 @@ var _sting: AudioStreamWAV
 var _final_sting: AudioStreamWAV
 var _muted := false
 var _sound_starts := 0
+var _leaks := Leaks.new()
+var _leak_age := 2.0
+var _leak_routes: Array[Dictionary] = []
+var _discharge: AudioStreamWAV
+var _leak_sound_starts := 0
+var _lamp_audio := AudioStreamPlayer.new()
+var _lamp_gate := LampGate.new()
+var _lamp_ticks: Array[AudioStreamWAV] = []
+var _lamp_keys := PackedInt32Array()
+var _lamp_sound_starts := 0
+var _lamp_last_key := -1
+var _lamp_last_time := -1.0
+var _audio_unlocked := false
 var _mute_rect := Rect2(290, 14, 76, 44)
 
 
@@ -76,6 +91,12 @@ func _ready() -> void:
 	_glass_light.gradient.colors = PackedColorArray([Color(1, 1, 1, 0.50), Color(1, 1, 1, 0.32), Color(1, 1, 1, 0)])
 	_sting = Sounds.make_sting()
 	_final_sting = Sounds.make_sting(true)
+	_discharge = Sounds.make_discharge()
+	for variant in 3:
+		_lamp_ticks.append(Sounds.make_lamp_tick(variant))
+	_lamp_audio.volume_db = -24.0
+	_lamp_audio.max_polyphony = 1
+	add_child(_lamp_audio)
 	_audio.volume_db = -8.0
 	add_child(_audio)
 	var preferences := ConfigFile.new()
@@ -99,7 +120,9 @@ func _process(delta: float) -> void:
 		_tap_age += delta
 		_button_age += delta
 		_reward_age += delta
+		_leak_age += delta
 		queue_redraw()
+	_tick_lamp_audio()
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -114,6 +137,7 @@ func _gui_input(event: InputEvent) -> void:
 	if not pressed:
 		return
 	accept_event()
+	_audio_unlocked = true
 	_handle_design_tap((point - _offset) / _scale)
 	_publish_semantics()
 
@@ -265,9 +289,8 @@ func _draw_board() -> void:
 				else:
 					_draw_panel(panel, color, intensity, lit)
 	_draw_reward_wave()
+	_draw_leak(spacing)
 	_draw_nodes(grid_size, spacing)
-	if not model.inspection.is_empty() and not bool(model.inspection.safe):
-		_draw_witness(grid_size, spacing)
 
 
 func _draw_glass_glow(rect: Rect2, color: Color, intensity: float) -> void:
@@ -326,6 +349,8 @@ func _draw_nodes(grid_size: int, spacing: float) -> void:
 				var taps := int(definition.get("hint_taps", model.stage_index + 1))
 				_draw_tap_badge(center + Vector2(radius * 0.85, -radius * 1.05), taps)
 			_draw_wires(cap, radius, model.corrections[index], (row + column) % 2 == 0)
+			if _leaks.active:
+				_draw_original_fault(cap, radius, int(definition.hidden.get(index, 0)), model.corrections[index], (row + column) % 2 == 0)
 			if not reduced_motion and index == _tap_node_index and _tap_age < 0.35:
 				_circle(center, radius + 3 + _tap_age * 23, Color(PAPER, 0.3 * (1.0 - _tap_age / 0.35)), false, 1.3, true)
 
@@ -353,21 +378,126 @@ func _draw_tap_badge(center: Vector2, count: int) -> void:
 	_draw_text(label, center + Vector2(-_text_width(label, 12, true) * 0.5, 4), 12, INK, true)
 
 
-func _draw_witness(grid_size: int, spacing: float) -> void:
-	var witness: Array = model.inspection.get("red_witness", [])
-	if witness.is_empty():
+func _build_leak_routes() -> void:
+	_leak_routes.clear()
+	for component in [Tutorial.RED, Tutorial.BLUE]:
+		var crossing := "red_crossing" if component == Tutorial.RED else "blue_crossing"
+		if not bool(model.inspection.get(crossing, false)):
+			continue
+		var faces: Array = _definition.red_faces if component == Tutorial.RED else _definition.blue_faces
+		var route := Leaks.route(faces, model._residual_support(component), int(_definition.size), component == Tutorial.RED)
+		if route.is_empty():
+			continue
+		route.component = component
+		var points: PackedVector2Array = route.points
+		var jagged := PackedVector2Array()
+		var distance := 0.0
+		var arrivals: Array[float] = []
+		for segment in points.size() - 1:
+			var a := points[segment]
+			var b := points[segment + 1]
+			var normal := (b - a).orthogonal().normalized()
+			for step in 5:
+				var offset := 0.0 if step == 0 else sin(float(segment * 17 + step * 29 + component)) * 0.032
+				jagged.append(a.lerp(b, float(step) / 5.0) + normal * offset)
+			distance += a.distance_to(b)
+			if segment >= 1 and segment % 2 == 1:
+				arrivals.append(distance)
+		jagged.append(points[-1])
+		route.jagged = jagged
+		route.arrivals = arrivals
+		route.length = distance
+		_leak_routes.append(route)
+
+
+func _draw_leak(spacing: float) -> void:
+	if not _leaks.active:
 		return
-	var points := PackedVector2Array()
-	for index in witness:
-		var row: int = int(index) / grid_size
-		var column: int = int(index) % grid_size
-		points.append(_board_rect.position + Vector2(column + 0.5, row + 0.5) * spacing)
-	if points.size() >= 2:
-		draw_polyline(points, Color("#280f1c"), 11.0, true)
-		draw_polyline(points, RED.darkened(0.3), 8.0, true)
-		draw_polyline(points, RED.lightened(0.15), 3.0, true)
-		draw_line(points[0] - Vector2(0, spacing * 0.48), points[0], RED, 8.0, true)
-		draw_line(points[-1], points[-1] + Vector2(0, spacing * 0.48), RED, 8.0, true)
+	var progress := 1.0 if reduced_motion else clampf(_leak_age / 0.65, 0.0, 1.0)
+	for route in _leak_routes:
+		var color := RED if route.component == Tutorial.RED else BLUE
+		var points := PackedVector2Array()
+		for point in route.jagged:
+			points.append(_board_rect.position + point * spacing)
+		# A quiet residual trace remains after the single travelling discharge.
+		draw_polyline(points, Color("#0b101a"), 4.0, true)
+		draw_polyline(points, Color(color, 0.65), 1.3, true)
+		if not reduced_motion and progress < 1.0:
+			var length := _polyline_length(points)
+			var pulse := _polyline_slice(points, maxf(0.0, progress * length - 65.0), progress * length)
+			if pulse.size() >= 2:
+				draw_polyline(pulse, Color(color, 0.17), 10.0, true)
+				draw_polyline(pulse, Color(color, 0.75), 4.0, true)
+				draw_polyline(pulse, Color("#ecf6ff"), 1.5, true)
+		var faces: Array = _definition.red_faces if route.component == Tutorial.RED else _definition.blue_faces
+		for index in route.checks.size():
+			var check: int = route.checks[index]
+			var arrival: float = route.arrivals[index] / route.length
+			var growth := 1.0 if reduced_motion else clampf((progress - arrival) / 0.18, 0.0, 1.0)
+			if growth <= 0.0:
+				continue
+			var face: Dictionary = faces[check]
+			var center: Vector2 = _board_rect.position + face.center * spacing
+			var extent: Vector2 = face.extent * spacing * 0.84
+			_draw_glass_cracks(center, extent, color, growth, not reduced_motion and progress < minf(1.0, arrival + 0.25), check)
+
+
+func _draw_glass_cracks(center: Vector2, extent: Vector2, color: Color, growth: float, charged: bool, seed_value: int) -> void:
+	var branches := [
+		[Vector2.ZERO, Vector2(-0.12, -0.07), Vector2(-0.20, -0.28), Vector2(-0.42, -0.39)],
+		[Vector2.ZERO, Vector2(0.15, -0.11), Vector2(0.22, -0.31), Vector2(0.40, -0.43)],
+		[Vector2.ZERO, Vector2(0.04, 0.17), Vector2(-0.08, 0.29), Vector2(-0.03, 0.46)],
+		[Vector2(0.04, 0.17), Vector2(0.23, 0.23), Vector2(0.37, 0.38)],
+		[Vector2(-0.20, -0.28), Vector2(-0.36, -0.20), Vector2(-0.46, -0.22)]]
+	var mirror := -1.0 if seed_value % 2 == 0 else 1.0
+	for branch in branches:
+		var points := PackedVector2Array()
+		for point in branch:
+			points.append(center + point * extent * Vector2(mirror, 1) * growth)
+		draw_polyline(points, Color(0.02, 0.04, 0.07, 0.9), 2.8, true)
+		draw_polyline(points, Color(0.71, 0.85, 0.95, 0.65), 0.85, true)
+		if charged:
+			draw_polyline(points, Color(color, 0.32), 3.5, true)
+			draw_polyline(points, Color(0.9, 0.96, 1, 0.9), 1, true)
+
+
+func _draw_original_fault(center: Vector2, radius: float, hidden: int, correction: int, even: bool) -> void:
+	if hidden == 0:
+		return
+	for component in [Tutorial.RED, Tutorial.BLUE]:
+		if (hidden & component) == 0:
+			continue
+		var endpoints := Leaks.ghost_segment(center, radius, component, even)
+		var direction := (endpoints[1] - endpoints[0]) * 0.5
+		var color := RED if component == Tutorial.RED else BLUE
+		for part in 4:
+			var a := center + direction * (-1.0 + float(part) * 0.56)
+			var b := a + direction * 0.32
+			draw_line(a, b, Color(color, 0.22), 7, true)
+			draw_line(a, b, Color(color, 0.88), 2, true)
+		if correction & component:
+			var badge := center + Vector2(-17 if component == Tutorial.RED else 17, 18)
+			_circle(badge, 7, Color("#17212b"))
+			_draw_text("0", badge + Vector2(-3.2, 4), 10, color, true)
+
+
+func _polyline_length(points: PackedVector2Array) -> float:
+	var length := 0.0
+	for i in points.size() - 1:
+		length += points[i].distance_to(points[i + 1])
+	return length
+
+
+func _polyline_slice(points: PackedVector2Array, start: float, finish: float) -> PackedVector2Array:
+	var result := PackedVector2Array()
+	var travelled := 0.0
+	for i in points.size() - 1:
+		var length := points[i].distance_to(points[i + 1])
+		if length > 0.0 and finish > travelled and start < travelled + length:
+			result.append(points[i].lerp(points[i + 1], clampf((start - travelled) / length, 0.0, 1.0)))
+			result.append(points[i].lerp(points[i + 1], clampf((finish - travelled) / length, 0.0, 1.0)))
+		travelled += length
+	return result
 
 
 func _draw_footer() -> void:
@@ -503,8 +633,22 @@ func _publish_semantics() -> void:
 			_audio.stream = _final_sting if event == "finale" else _sting
 			_audio.play()
 			_sound_starts += 1
-	_publish_feedback()
+	var leak_event := _leaks.observe(state)
+	if leak_event == "reset":
+		_leak_routes.clear()
+		_leak_age = 2.0
+		_audio.stop()
+	elif leak_event == "leak":
+		_leak_age = 0.0
+		_build_leak_routes()
+		if not _muted and not AudioServer.is_bus_mute(0):
+			_audio.stream = _discharge
+			_audio.play()
+			_leak_sound_starts += 1
 	var state_json := JSON.stringify(state)
+	if state_json != _last_state_json:
+		_refresh_lamp_audio()
+	_publish_feedback()
 	if state_json == _last_state_json:
 		return
 	_last_state_json = state_json
@@ -544,6 +688,11 @@ func _draw_board_caption() -> void:
 	elif model.can_call_foreman():
 		caption = "LIGHTS OUT. READY FOR INSPECTION."
 	_draw_text(caption, Vector2(195 - _text_width(caption, 10, true) * 0.5, 506), 10, Color("#c7b5d0"), true)
+	if _leaks.active:
+		_draw_text("DASHED: ORIGINAL FAULT    SOLID: YOUR WIRE", Vector2(42, 533), 11, PAPER, true)
+		_draw_text("Same color twice = 0. The remaining path leaks.", Vector2(40, 554), 11, Color("#c7b5d0"))
+		_draw_text("Tutorial reveal. Checks alone cannot show the original.", Vector2(33, 575), 10, MUTED)
+		return
 	# A compact physical wire legend makes the tap cycle visible during play.
 	for index in 4:
 		var center := Vector2(138 + index * 38, 538)
@@ -574,7 +723,7 @@ func _outline(rect: Rect2, color: Color, radius: int) -> void:
 
 
 func _draw_reward_wave() -> void:
-	if reduced_motion or _rewards.kind.is_empty():
+	if reduced_motion or _rewards.kind.is_empty() or _leaks.active:
 		return
 	var finale := _rewards.kind == "finale"
 	var success := _rewards.kind in ["success", "finale"]
@@ -616,6 +765,8 @@ func _toggle_mute() -> void:
 	_muted = not _muted
 	if _muted:
 		_audio.stop()
+		_lamp_audio.stop()
+		_lamp_gate.reset()
 	if OS.has_feature("web"):
 		JavaScriptBridge.eval("try { localStorage.setItem('disco-breaker-muted', '%s'); } catch (_) {}" % ("1" if _muted else "0"))
 	else:
@@ -629,5 +780,37 @@ func _publish_feedback() -> void:
 	if OS.has_feature("web"):
 		var feedback := {"kind": _rewards.kind, "event_count": _rewards.event_count,
 			"success_count": _rewards.success_count, "sound_starts": _sound_starts,
-			"muted": _muted, "reduced_motion": reduced_motion}
+			"muted": _muted, "reduced_motion": reduced_motion,
+			"leak_active": _leaks.active, "leak_events": _leaks.event_count,
+			"leak_sound_starts": _leak_sound_starts, "lamp_sound_starts": _lamp_sound_starts,
+			"lamp_last_key": _lamp_last_key, "lamp_last_time": _lamp_last_time,
+			"lamp_last_brightness": Flicker.brightness(_lamp_last_key, _lamp_last_time) if _lamp_last_key >= 0 else 0.0,
+			"revealed_hidden": _definition.hidden if _leaks.active else {}, "leak_routes": []}
+		for route in _leak_routes:
+			feedback.leak_routes.append({"component": route.component, "qubits": route.qubits, "checks": route.checks})
 		JavaScriptBridge.eval("window.discoBreakerFeedback = %s;" % JSON.stringify(feedback))
+
+
+func _refresh_lamp_audio() -> void:
+	_lamp_audio.stop()
+	_lamp_gate.reset()
+	_lamp_keys.clear()
+	for component in [Tutorial.RED, Tutorial.BLUE]:
+		var checks := model.lit_red_checks() if component == Tutorial.RED else model.lit_blue_checks()
+		for check in checks:
+			_lamp_keys.append(model.stage_index * 1000 + int(_definition.size) * 100 + component * 40 + check)
+
+
+func _tick_lamp_audio() -> void:
+	var enabled := _audio_unlocked and not _muted and not reduced_motion and not AudioServer.is_bus_mute(0) and not model.dialogue_visible and not model.result_visible and not model.finished
+	var key := _lamp_gate.poll(_lamp_keys, _elapsed, enabled)
+	if not enabled:
+		_lamp_audio.stop()
+	if key < 0:
+		return
+	_lamp_audio.stream = _lamp_ticks[(key + _lamp_sound_starts) % _lamp_ticks.size()]
+	_lamp_audio.play()
+	_lamp_sound_starts += 1
+	_lamp_last_key = key
+	_lamp_last_time = _elapsed
+	_publish_feedback()

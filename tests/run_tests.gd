@@ -2,6 +2,8 @@ extends SceneTree
 
 const Tutorial := preload("res://src/tutorial_state.gd")
 const Inspection := preload("res://src/inspection_semantics.gd")
+const Leaks := preload("res://src/leak_feedback.gd")
+const LampGate := preload("res://src/lamp_sound_gate.gd")
 const Rewards := preload("res://src/reward_feedback.gd")
 const Sounds := preload("res://src/reward_sound.gd")
 const Flicker := preload("res://src/fault_flicker.gd")
@@ -36,8 +38,14 @@ func _init() -> void:
 	_test_reward_events()
 	_test_unsafe_rewards_and_retry()
 	_test_reward_audio()
+	_test_leak_events()
+	_test_residual_routes()
+	_test_original_fault_xor()
+	_test_lamp_sound_gate()
+	_test_electrical_sounds()
+	_test_color_families_and_ghost_alignment()
 	if failures.is_empty():
-		print("PASS: 16 tutorial tests")
+		print("PASS: 22 tutorial tests")
 		quit(0)
 	else:
 		for failure in failures:
@@ -416,3 +424,173 @@ func _test_reward_audio() -> void:
 		_expect(not Rewards.wants_sound(event, true), "mute suppresses every reward sound")
 		_expect(not Rewards.wants_sound(event, false, true), "master mute is respected")
 		_expect(Rewards.wants_sound(event, false) == (event in ["success", "finale"]), "sound requires a verified success event")
+
+
+func _test_leak_events() -> void:
+	var model := Tutorial.new()
+	var leaks := Leaks.new()
+	leaks.observe(model.semantic_state())
+	model.confirm_dialogue()
+	leaks.observe(model.semantic_state())
+	model.tap_node(1, 1)
+	_expect(leaks.observe(model.semantic_state()).is_empty() and not leaks.active, "safe clear never discharges")
+	model.stage_index = 4
+	model._reset_stage()
+	model._record("test_floor", {})
+	leaks.observe(model.semantic_state())
+	_expect(not leaks.active, "dark floor before inspection never reveals error")
+	model.confirm_dialogue()
+	_expect(leaks.observe(model.semantic_state()) == "leak" and leaks.event_count == 1, "failed trap inspection discharges once")
+	_expect(leaks.observe(model.semantic_state()).is_empty(), "redraw cannot repeat discharge")
+	model.tap_node(1, 1)
+	_expect(leaks.observe(model.semantic_state()).is_empty(), "ignored result tap cannot repeat discharge")
+	model.next_stage()
+	_expect(leaks.observe(model.semantic_state()) == "reset" and not leaks.active, "next lesson clears crack and reveal state")
+	model.stage_index = 0
+	model._reset_stage()
+	model._record("test_floor", {})
+	leaks.observe(model.semantic_state())
+	model.confirm_dialogue()
+	leaks.observe(model.semantic_state())
+	model.tap_node(0, 1)
+	leaks.observe(model.semantic_state())
+	model.tap_node(2, 1)
+	_expect(leaks.observe(model.semantic_state()) == "leak", "guided logical failure discharges")
+	model.next_stage()
+	_expect(leaks.observe(model.semantic_state()) == "reset" and not leaks.active, "retry removes all failure presentation")
+	model.restart()
+	leaks.observe(model.semantic_state())
+	_expect(not leaks.active and leaks.event_count == 2, "replay neither leaks nor repeats sound")
+
+
+func _test_residual_routes() -> void:
+	var model := Tutorial.new()
+	var d := model.definition()
+	for component in [Tutorial.RED, Tutorial.BLUE]:
+		var faces: Array = d.red_faces if component == Tutorial.RED else d.blue_faces
+		var cut: Array = d.red_cut if component == Tutorial.RED else d.blue_cut
+		for mask in 512:
+			var support := PackedInt32Array()
+			for node in 9:
+				if mask & (1 << node):
+					support.append(node)
+			var dark := true
+			for face in faces:
+				var parity := 0
+				for node in face.nodes:
+					parity ^= 1 if support.has(node) else 0
+				dark = dark and parity == 0
+			var crossing := 0
+			for node in cut:
+				crossing ^= 1 if support.has(node) else 0
+			if not dark or crossing == 0:
+				continue
+			var route := Leaks.route(faces, support, 3, component == Tutorial.RED)
+			_expect(not route.is_empty(), "every zero-syndrome logical class has a drawable residual chain")
+			if route.is_empty():
+				continue
+			for node in route.qubits:
+				_expect(support.has(node), "route never invents a residual qubit")
+			_expect(route.checks.size() == route.qubits.size() - 1, "chain alternates actual qubits and shared checks")
+			for index in route.checks.size():
+				var nodes: Array = faces[route.checks[index]].nodes
+				_expect(nodes.has(route.qubits[index]) and nodes.has(route.qubits[index + 1]), "drawn segment joins qubits incident to the same check")
+			var first: int = route.qubits[0]
+			var last: int = route.qubits[-1]
+			_expect((first < 3 and last >= 6) if component == Tutorial.RED else (first % 3 == 0 and last % 3 == 2), "chain connects the correct opposing boundaries")
+
+
+func _test_original_fault_xor() -> void:
+	var model := Tutorial.new()
+	model.stage_index = 2
+	model._reset_stage()
+	model.confirm_dialogue()
+	for column in [0, 2]:
+		model.tap_node(1, column)
+		model.tap_node(1, column)
+	model.tap_node(1, 1)
+	_expect(model.definition().hidden == {4: Tutorial.BOTH}, "answer reveal preserves the original hidden error")
+	_expect(model.is_dark() and model.inspection.blue_crossing and not model.inspection.red_crossing, "red component cancels while blue logical component remains")
+	_expect(model._residual_support(Tutorial.RED).is_empty(), "cancelled original and placed red never enters discharge")
+	var route := Leaks.route(model.definition().blue_faces, model._residual_support(Tutorial.BLUE), 3, false)
+	_expect(route.qubits == [3, 4, 5], "blue residual includes the original center component and placed end corrections")
+
+
+func _test_lamp_sound_gate() -> void:
+	var gate := LampGate.new()
+	var keys := PackedInt32Array([6340, 6341, 6380, 6381])
+	var count := 0
+	var last := -100.0
+	var by_lamp: Dictionary = {}
+	_expect(gate.poll(keys, 0.0, true) == -1, "initial lamp sample never starts a sound")
+	for frame in range(1, 4800):
+		if frame % 47 == 0:
+			gate.reset()
+		var time := float(frame) / 120.0
+		var key := gate.poll(keys, time, true)
+		if key < 0:
+			continue
+		count += 1
+		_expect(Flicker.brightness(key, time) < 0.15 and Flicker.brightness(key, time - 1.0 / 120.0) >= 0.6, "every tick matches a visible dropout edge")
+		_expect(time - last >= LampGate.MIN_GAP - 0.00001, "all lamps share a frequency limit")
+		_expect(time - float(by_lamp.get(key, -100.0)) >= LampGate.PER_LAMP_GAP - 0.00001, "one lamp cannot chatter every blink")
+		last = time
+		by_lamp[key] = time
+	_expect(count > 4 and count < 125, "subtle periodic lamp sound remains bounded")
+	for frame in 240:
+		_expect(gate.poll(keys, 40.0 + float(frame) / 120.0, false) == -1, "mute, reduced motion and non-play states silence lamps")
+	_expect(gate.poll(keys, 42.0, true) == -1, "unmute or lesson change cannot replay a missed dropout")
+	_expect(gate.poll(PackedInt32Array(), 43.0, true) == -1, "cleared floor has no lamp sound")
+
+
+func _test_electrical_sounds() -> void:
+	var discharge := Sounds.make_discharge()
+	_expect(discharge.get_length() < 0.4, "failure snap is short")
+	_expect(discharge.data == Sounds.make_discharge().data, "failure sound is deterministic")
+	var streams: Array[AudioStreamWAV] = [discharge]
+	for variant in 3:
+		var tick := Sounds.make_lamp_tick(variant)
+		_expect(tick.get_length() < 0.07, "lamp sounds remain tiny ticks")
+		_expect(tick.data == Sounds.make_lamp_tick(variant).data, "tick variations are deterministic")
+		if variant > 0:
+			_expect(tick.data != streams[-1].data, "lamp tick has small variations")
+		streams.append(tick)
+	for stream in streams:
+		var peak := 0
+		for frame in stream.data.size() / 2:
+			peak = maxi(peak, absi(stream.data.decode_s16(frame * 2)))
+		_expect(peak > 1000 and peak < 20000, "electrical PCM is audible and bounded")
+		_expect(stream.data.decode_s16(0) == 0 and absi(stream.data.decode_s16(stream.data.size() - 2)) < 10, "electrical PCM endpoints stay quiet")
+
+
+func _test_color_families_and_ghost_alignment() -> void:
+	var red := Tutorial.new()
+	red.corrections[1] = Tutorial.RED
+	red.corrections[7] = Tutorial.RED
+	_expect(red.is_dark() and red._inspect_residual().red_crossing, "original center X plus upper/lower X is the dark logical X example")
+	var blue := Tutorial.new()
+	blue.stage_index = 1
+	blue._reset_stage()
+	blue.corrections[1] = Tutorial.RED
+	blue.corrections[7] = Tutorial.RED
+	_expect(blue.lit_red_checks() == [0, 1] and blue.lit_blue_checks() == [0, 1], "center Z cannot complete an X chain: two red and two blue syndromes remain")
+	blue.corrections = PackedInt32Array([0, 0, 0, Tutorial.BLUE, 0, Tutorial.BLUE, 0, 0, 0])
+	_expect(blue.is_dark() and blue._inspect_residual().blue_crossing, "center Z plus left/right Z makes the independent logical Z chain")
+	var both := Tutorial.new()
+	both.stage_index = 2
+	both._reset_stage()
+	both.corrections[1] = Tutorial.RED
+	both.corrections[7] = Tutorial.RED
+	_expect(both.lit_red_checks().is_empty() and both.lit_blue_checks() == [0, 1], "center Y includes X but its uncorrected Z still lights blue checks")
+	both.corrections[3] = Tutorial.BLUE
+	both.corrections[5] = Tutorial.BLUE
+	var result := both._inspect_residual()
+	_expect(both.is_dark() and result.red_crossing and result.blue_crossing, "Y center participates in independent X and Z residual chains")
+	for even in [false, true]:
+		var center := Vector2(195, 309)
+		var x := Leaks.ghost_segment(center, 25, Tutorial.RED, even)
+		var z := Leaks.ghost_segment(center, 25, Tutorial.BLUE, even)
+		_expect(((x[0] + x[1]) * 0.5).is_equal_approx(center) and ((z[0] + z[1]) * 0.5).is_equal_approx(center), "both ghost components are centered on their data qubit")
+		_expect(is_zero_approx((x[1] - x[0]).dot(z[1] - z[0])), "X and Z ghost axes stay distinct")
+		var correction_axis := Vector2(11, 11 if even else -11)
+		_expect(is_zero_approx((x[1] - x[0]).cross(correction_axis)), "red ghost aligns with the physical correction wire")
