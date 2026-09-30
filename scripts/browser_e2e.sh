@@ -90,7 +90,10 @@ cycle_grid_3x3() {
   done
 }
 
-assert_state "window.discoBreakerState.stage_id === 'red_one_tap'"
+assert_state "window.discoBreakerState.screen === 'title' && !window.discoBreakerState.campaign_available"
+click_canvas 195 775 title-enter-tutorial
+sleep 0.3
+assert_state "window.discoBreakerState.screen === 'tutorial' && window.discoBreakerState.stage_id === 'red_one_tap'"
 capture_state 01 stage1-intro-dialogue
 chrome-devtools-axi screenshot artifacts/tutorial-stage-1.png >/dev/null
 click_canvas 195 793 stage1-confirm-dialogue
@@ -202,6 +205,8 @@ assert_state "window.discoBreakerState.stage_id === 'red_one_tap' && !window.dis
 run_name="optional-skip"
 chrome-devtools-axi open http://127.0.0.1:8877/index.html >/dev/null
 sleep 4
+click_canvas 195 775 skip-run-title-enter
+sleep 0.3
 click_canvas 195 793 skip-run-stage1-confirm
 click_canvas 195 309 skip-run-stage1-solve
 click_canvas 195 793 skip-run-stage1-next

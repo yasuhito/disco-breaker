@@ -1,5 +1,6 @@
 extends Control
 
+const Title := preload("res://src/title_artwork.gd")
 const Tutorial := preload("res://src/tutorial_state.gd")
 const Leaks := preload("res://src/leak_feedback.gd")
 const LampGate := preload("res://src/lamp_sound_gate.gd")
@@ -27,6 +28,11 @@ const AMBER := Color("#ffb62b")
 const GREEN := Color("#2bd889")
 
 var model := Tutorial.new()
+var at_title := true
+var _tutorial_started := false
+var _title_art := Title.new()
+var _navigation_guard_until := 0
+var _home_rect := Rect2(16, 14, 44, 44)
 var reduced_motion := false
 var _elapsed := 0.0
 var _scale := 1.0
@@ -143,6 +149,8 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func inject_action(action: Dictionary) -> bool:
+	if at_title:
+		return false
 	match String(action.get("type", "")):
 		"confirm":
 			model.confirm_dialogue()
@@ -164,18 +172,34 @@ func inject_action(action: Dictionary) -> bool:
 
 
 func semantic_state() -> Dictionary:
-	return model.semantic_state()
+	var state := model.semantic_state()
+	state["screen"] = "title" if at_title else "tutorial"
+	state["tutorial_started"] = _tutorial_started
+	state["campaign_available"] = false
+	return state
 
 
 func _handle_design_tap(point: Vector2) -> void:
 	if _mute_rect.has_point(point):
 		_toggle_mute()
 		return
+	if Time.get_ticks_msec() < _navigation_guard_until:
+		return
+	if at_title:
+		if Title.TUTORIAL_RECT.has_point(point):
+			_open_tutorial()
+		return
+	if _home_rect.has_point(point) or (model.finished and _secondary_rect.has_point(point)):
+		_show_title()
+		return
 	if _primary_rect.has_point(point) or _secondary_rect.has_point(point):
 		_button_age = 0.0
 	if model.dialogue_visible or model.finished:
 		if _primary_rect.has_point(point):
-			model.confirm_dialogue()
+			if model.finished:
+				_open_tutorial()
+			else:
+				model.confirm_dialogue()
 			queue_redraw()
 		return
 	if model.result_visible:
@@ -205,11 +229,38 @@ func _handle_design_tap(point: Vector2) -> void:
 				return
 
 
+func _open_tutorial() -> void:
+	if model.finished:
+		model.confirm_dialogue()
+	at_title = false
+	_tutorial_started = true
+	_navigation_guard_until = Time.get_ticks_msec() + 280
+	_button_age = 1.0
+	queue_redraw()
+
+
+func _show_title() -> void:
+	at_title = true
+	_navigation_guard_until = Time.get_ticks_msec() + 280
+	_audio.stop()
+	_lamp_audio.stop()
+	_lamp_gate.reset()
+	# Keep the model and verdict for Continue, but never replay old effects/sounds.
+	_reward_age = 2.0
+	_leak_age = 2.0
+	queue_redraw()
+
+
 func _draw() -> void:
 	_scale = minf(size.x / DESIGN_SIZE.x, size.y / DESIGN_SIZE.y)
 	_offset = (size - DESIGN_SIZE * _scale) * 0.5
 	draw_set_transform(_offset, 0.0, Vector2.ONE * _scale)
 	_draw_background()
+	if at_title:
+		_title_art.draw(self, _elapsed, reduced_motion, _tutorial_started, model.finished)
+		_draw_mute_toggle()
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
 	_draw_app_bar()
 	_draw_progress()
 	_draw_board()
@@ -224,14 +275,10 @@ func _draw_background() -> void:
 
 
 func _draw_app_bar() -> void:
-	# A tiny mirror-ball mark anchors the disco identity without consuming play space.
-	draw_line(Vector2(38, 0), Vector2(38, 21), Color("#726679"), 1)
-	_circle(Vector2(38, 35), 14, Color("#423a50"))
-	for row in range(-2, 3):
-		for column in range(-2, 3):
-			if row * row + column * column <= 5:
-				var tile := Rect2(36 + column * 5, 33 + row * 5, 3.5, 3.5)
-				draw_rect(tile, Color("#ead9b9") if (row + column) % 3 == 0 else Color("#9383a0"))
+	_surface(_home_rect, Color("#302939"), Color("#5e506b"), 12, 2)
+	var home := _home_rect.get_center()
+	draw_polyline(PackedVector2Array([home + Vector2(-9, 0), home + Vector2(0, -8), home + Vector2(9, 0)]), PAPER, 2, true)
+	draw_polyline(PackedVector2Array([home + Vector2(-6, -2), home + Vector2(-6, 8), home + Vector2(6, 8), home + Vector2(6, -2)]), PAPER, 2, true)
 	_draw_text("DISCO BREAKER", Vector2(63, 42), 17, PAPER, true)
 	_draw_mute_toggle()
 	draw_line(Vector2(24, 67), Vector2(366, 67), Color(1, 0.87, 0.68, 0.12), 1)
@@ -504,6 +551,9 @@ func _draw_footer() -> void:
 	_primary_rect = Rect2(18, 764, 354, 58)
 	_secondary_rect = Rect2(18, 716, 354, 38)
 	if model.dialogue_visible:
+		if model.finished:
+			_secondary_rect = Rect2(18, 556, 354, 38)
+			_draw_button(_secondary_rect, "BACK TO TITLE", Color("#49365e"), true)
 		_draw_dialogue()
 		_draw_button(_primary_rect, "REPLAY" if model.finished else "OK", PINK, true)
 		return
@@ -622,7 +672,7 @@ func _text_width(text: String, font_size: int, bold := false) -> float:
 func _publish_semantics() -> void:
 	_definition = model.definition()
 	_stage_count = model.stages().size()
-	var state := model.semantic_state()
+	var state := semantic_state()
 	var event := _rewards.observe(state)
 	if event == "reset":
 		_reward_age = 2.0
@@ -653,7 +703,7 @@ func _publish_semantics() -> void:
 		return
 	_last_state_json = state_json
 	if OS.has_feature("web"):
-		JavaScriptBridge.eval("window.discoBreakerState = %s; document.documentElement.dataset.tutorialStage = String(window.discoBreakerState.stage); document.title = 'DISCO BREAKER · ' + window.discoBreakerState.stage_id;" % state_json)
+		JavaScriptBridge.eval("window.discoBreakerState = %s; document.documentElement.dataset.tutorialStage = String(window.discoBreakerState.stage); document.documentElement.dataset.screen = window.discoBreakerState.screen; document.title = window.discoBreakerState.screen === 'title' ? 'DISCO BREAKER' : 'DISCO BREAKER · ' + window.discoBreakerState.stage_id;" % state_json)
 
 
 func _surface(rect: Rect2, base: Color, edge: Color, radius: int, depth: float) -> void:
@@ -781,12 +831,12 @@ func _publish_feedback() -> void:
 		var feedback := {"kind": _rewards.kind, "event_count": _rewards.event_count,
 			"success_count": _rewards.success_count, "sound_starts": _sound_starts,
 			"muted": _muted, "reduced_motion": reduced_motion,
-			"leak_active": _leaks.active, "leak_events": _leaks.event_count,
+			"leak_active": _leaks.active and not at_title, "leak_events": _leaks.event_count,
 			"leak_sound_starts": _leak_sound_starts, "lamp_sound_starts": _lamp_sound_starts,
 			"lamp_last_key": _lamp_last_key, "lamp_last_time": _lamp_last_time,
 			"lamp_last_brightness": Flicker.brightness(_lamp_last_key, _lamp_last_time) if _lamp_last_key >= 0 else 0.0,
-			"revealed_hidden": _definition.hidden if _leaks.active else {}, "leak_routes": []}
-		for route in _leak_routes:
+			"revealed_hidden": _definition.hidden if _leaks.active and not at_title else {}, "leak_routes": []}
+		for route in ([] if at_title else _leak_routes):
 			feedback.leak_routes.append({"component": route.component, "qubits": route.qubits, "checks": route.checks})
 		JavaScriptBridge.eval("window.discoBreakerFeedback = %s;" % JSON.stringify(feedback))
 
@@ -802,7 +852,7 @@ func _refresh_lamp_audio() -> void:
 
 
 func _tick_lamp_audio() -> void:
-	var enabled := _audio_unlocked and not _muted and not reduced_motion and not AudioServer.is_bus_mute(0) and not model.dialogue_visible and not model.result_visible and not model.finished
+	var enabled := not at_title and _audio_unlocked and not _muted and not reduced_motion and not AudioServer.is_bus_mute(0) and not model.dialogue_visible and not model.result_visible and not model.finished
 	var key := _lamp_gate.poll(_lamp_keys, _elapsed, enabled)
 	if not enabled:
 		_lamp_audio.stop()

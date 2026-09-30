@@ -1,5 +1,5 @@
 [application]
-config/name="DISCO BREAKER Tutorial"
+config/name="DISCO BREAKER"
 run/main_scene="res://scenes/tutorial.tscn"
 
 [display]

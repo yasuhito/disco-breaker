@@ -76,7 +76,11 @@ try {
   await page.goto(baseUrl);
   await page.waitForTimeout(4000);
 
-  await assertState("state.stage_id === 'red_one_tap'", "tutorial opens on stage 1");
+  await assertState("state.screen === 'title' && !state.campaign_available", "title opens with unavailable campaign");
+  await captureState("title");
+  await clickCanvas(195, 775);
+  await page.waitForTimeout(300);
+  await assertState("state.screen === 'tutorial' && state.stage_id === 'red_one_tap'", "tutorial opens on stage 1");
   await captureState("stage1-intro-dialogue");
   await clickCanvas(195, 793);
   await captureState("stage1-pre-action");
@@ -178,6 +182,8 @@ try {
 
   await page.goto(baseUrl);
   await page.waitForTimeout(4000);
+  await clickCanvas(195, 775);
+  await page.waitForTimeout(300);
   await assertState("state.stage_id === 'red_one_tap'", "optional skip run opens on stage 1");
   await clickCanvas(195, 793);
   await clickCanvas(195, 309);
@@ -218,6 +224,8 @@ try {
   await touchPage.goto(baseUrl);
   await touchPage.waitForFunction(() => window.discoBreakerState);
   const touch = async (x, y) => { await touchPage.touchscreen.tap(x, y); await touchPage.waitForTimeout(100); };
+  await touch(195, 775);
+  await touchPage.waitForTimeout(300);
   await touch(195, 793);
   const initialCount = await touchPage.evaluate(() => window.discoBreakerState.action_count);
   for (let value = 1; value <= 4; value += 1) {
@@ -237,6 +245,7 @@ try {
     throw new Error(`console errors detected:\n${consoleErrors.join("\n")}`);
   }
 
+  await import("./title_e2e.mjs");
   console.log(`PASS: browser audited ${captureIndex} tutorial states, every connection box, optional skip, and native mobile touch`);
 } finally {
   await browser.close();
