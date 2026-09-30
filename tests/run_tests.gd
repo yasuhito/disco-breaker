@@ -2,7 +2,17 @@ extends SceneTree
 
 const Tutorial := preload("res://src/tutorial_state.gd")
 const Inspection := preload("res://src/inspection_semantics.gd")
+const Flicker := preload("res://src/fault_flicker.gd")
 const CopyLayout := preload("res://src/text_layout.gd")
+
+
+# Keep the earlier 5x5 adjacency regression as a test fixture, not a game mode.
+class RegressionFloor:
+	extends "res://src/tutorial_state.gd"
+
+	func definition() -> Dictionary:
+		return _with_geometry({"id": "regression_5x5", "size": 5,
+			"hidden": {12: RED, 3: BLUE, 21: RED}, "preset": {}, "target": -1})
 
 var failures: Array[String] = []
 
@@ -13,10 +23,16 @@ func _init() -> void:
 	_test_independent_crossing_parity()
 	_test_crossing_trap()
 	_test_graduation()
+	_test_boundary_lesson()
+	_test_final_skip_and_replay()
+	_test_surface_code_geometry()
+	_test_screenshot_move()
+	_test_logical_classes()
 	_test_semantic_contract()
 	_test_foreman_copy_wraps()
+	_test_fault_flicker()
 	if failures.is_empty():
-		print("PASS: 7 tutorial tests")
+		print("PASS: 13 tutorial tests")
 		quit(0)
 	else:
 		for failure in failures:
@@ -72,13 +88,13 @@ func _test_crossing_trap() -> void:
 
 func _test_graduation() -> void:
 	var model := Tutorial.new()
-	model.stage_index = 5
+	model.stage_index = 6
 	model._reset_stage()
 	model.confirm_dialogue()
-	model.tap_node(2, 2)
-	model.tap_node(0, 3)
-	model.tap_node(0, 3)
-	model.tap_node(4, 1)
+	_expect(model.definition().size == 3 and model.corrections.size() == 9, "final practice is 3x3")
+	model.tap_node(1, 1)
+	model.tap_node(0, 2)
+	model.tap_node(0, 2)
 	_expect(model.is_dark(), "graduation target should clear all panels")
 	_expect(model.can_call_foreman(), "foreman should enable only after clear")
 	_expect(model.inspect_floor().safe, "graduation repair should be safe")
@@ -94,7 +110,7 @@ func _test_semantic_contract() -> void:
 
 
 func _test_foreman_copy_wraps() -> void:
-	var font := ThemeDB.fallback_font
+	var font := preload("res://assets/fonts/Roboto-Regular.ttf")
 	var model := Tutorial.new()
 	var copy: Array[String] = []
 	var coach_copy: Array[String] = []
@@ -102,12 +118,17 @@ func _test_foreman_copy_wraps() -> void:
 		var coach := String(stage.coach)
 		copy.append(coach)
 		coach_copy.append(coach)
+	model.boundary_phase = 1
+	coach_copy.append(String(model.stages()[5].coach))
+	copy.append(String(model.stages()[5].coach))
+	copy.append("One edge flicker cleared!")
+	coach_copy.append("All seven lessons done!\nYou're ready to dance.")
 	copy.append_array([
-		"All six lessons complete!\nThe dance floor is in good hands.",
+		"All seven lessons done!\nYou're ready to dance.",
 		"The flicker is gone. Nice work!",
 		"The crossed wires stay inside. Safe!",
 		"Red reaches the other side!",
-		"Full-size floor is safe!",
+		"Practice floor is safe!",
 	])
 	for text in copy:
 		var font_size := 18 if text in coach_copy else 17
@@ -120,3 +141,163 @@ func _test_foreman_copy_wraps() -> void:
 func _expect(condition: bool, message: String) -> void:
 	if not condition:
 		failures.append(message)
+
+
+func _test_surface_code_geometry() -> void:
+	var model := RegressionFloor.new()
+	for size in [3, 5]:
+		var reds := model._faces(size, Tutorial.RED)
+		var blues := model._faces(size, Tutorial.BLUE)
+		_expect(reds.size() + blues.size() == size * size - 1, "full code includes boundary checks")
+		# Every X-check and Z-check must commute, including at boundaries.
+		for red in reds:
+			for blue in blues:
+				var overlap := 0
+				for node in red.nodes:
+					if blue.nodes.has(node):
+						overlap += 1
+				_expect(overlap % 2 == 0, "opposite checks commute at size %d" % size)
+	model.stage_index = 6
+	model._reset_stage()
+	model.confirm_dialogue()
+	# Exhaustively verify every connection point for red, blue and both.
+	for node in 25:
+		for value in [Tutorial.RED, Tutorial.BLUE, Tutorial.BOTH]:
+			model.corrections.fill(0)
+			var before_red := model.lit_red_checks()
+			var before_blue := model.lit_blue_checks()
+			model.corrections[node] = value
+			for component in [Tutorial.RED, Tutorial.BLUE]:
+				var faces: Array = model.definition().red_faces if component == Tutorial.RED else model.definition().blue_faces
+				var before := before_red if component == Tutorial.RED else before_blue
+				var after := model.lit_red_checks() if component == Tutorial.RED else model.lit_blue_checks()
+				for index in faces.size():
+					var flips: bool = (value & component) != 0 and faces[index].nodes.has(node)
+					_expect((before.has(index) != after.has(index)) == flips, "only incident checks flip")
+
+
+func _test_screenshot_move() -> void:
+	var model := RegressionFloor.new()
+	model.stage_index = 6
+	model._reset_stage()
+	model.confirm_dialogue()
+	# Red face 1 is upper-right of node 7; face 2 is lower-left.
+	var before := model.lit_red_checks()
+	var blue_before := model.lit_blue_checks()
+	model.tap_node(1, 2)
+	var after := model.lit_red_checks()
+	_expect(not before.has(1) and after.has(1), "screenshot move lights the previously dark red floor")
+	_expect(before.has(2) and not after.has(2), "screenshot move clears the adjacent lit red floor")
+	_expect(model.lit_blue_checks() == blue_before, "red move preserves blue syndrome")
+	# When both endpoints are lit, the very same move clears both immediately.
+	model.corrections.fill(0)
+	model.corrections[12] = Tutorial.RED
+	model.corrections[21] = Tutorial.RED
+	for node in [1, 2, 6]:
+		model.corrections[node] = Tutorial.RED
+	_expect(model.lit_red_checks() == [1, 2], "two-red regression setup")
+	model.tap_node(1, 2) # EMPTY -> RED cancels the two incident red checks.
+	_expect(model.lit_red_checks().is_empty(), "both red flickers disappear without inspection")
+
+
+func _test_logical_classes() -> void:
+	for component in [Tutorial.RED, Tutorial.BLUE]:
+		var model := RegressionFloor.new()
+		model.stage_index = 6
+		model._reset_stage()
+		model.confirm_dialogue()
+		for key in model.definition().hidden:
+			model.corrections[int(key)] = int(model.definition().hidden[key])
+		# Full column of X or full row of Z is an undetectable logical string.
+		for i in 5:
+			var node := i * 5 + 2 if component == Tutorial.RED else 10 + i
+			model.corrections[node] ^= component
+		_expect(model.is_dark(), "logical string has zero syndrome")
+		var verdict := model.inspect_floor()
+		_expect(not verdict.safe, "logical string fails despite a dark floor")
+		_expect(bool(verdict.red_crossing) == (component == Tutorial.RED), "logical X family")
+		_expect(bool(verdict.blue_crossing) == (component == Tutorial.BLUE), "logical Z family")
+	# Multiplying by a stabilizer is a successful correction even if E != C.
+	var model := RegressionFloor.new()
+	model.stage_index = 6
+	model._reset_stage()
+	model.confirm_dialogue()
+	for key in model.definition().hidden:
+		model.corrections[int(key)] = int(model.definition().hidden[key])
+	for node in model.definition().blue_faces[0].nodes:
+		model.corrections[node] ^= Tutorial.RED
+	_expect(model.is_dark() and model.inspect_floor().safe, "stabilizer-equivalent correction succeeds")
+
+func _test_final_skip_and_replay() -> void:
+	var model := Tutorial.new()
+	model.stage_index = 6
+	model._reset_stage()
+	model.confirm_dialogue()
+	model.skip_graduation()
+	_expect(model.finished, "final practice can be skipped unsolved")
+	model.confirm_dialogue()
+	_expect(not model.finished and model.stage_index == 0 and model.dialogue_visible, "replay starts the tutorial again")
+
+
+func _test_fault_flicker() -> void:
+	var model := Tutorial.new()
+	var state_before := JSON.stringify(model.semantic_state())
+	var pairs := [[340, 341], [340, 380], [5340, 5341]]
+	for keys in pairs:
+		var dark_count := 0
+		var bright_count := 0
+		var independent_count := 0
+		var transitions := 0
+		var was_dark := false
+		for frame in 1200:
+			var time := float(frame) / 60.0
+			var a := Flicker.brightness(keys[0], time)
+			var b := Flicker.brightness(keys[1], time)
+			_expect(a >= 0.0 and a <= 1.0, "lamp brightness is bounded")
+			_expect(a == Flicker.brightness(keys[0], time), "lamp sampling is deterministic")
+			_expect(Flicker.brightness(keys[0], time, true) == 1.0, "reduced motion holds the lamp steady")
+			var is_dark := a < 0.15
+			dark_count += 1 if is_dark else 0
+			bright_count += 1 if a > 0.8 else 0
+			independent_count += 1 if is_dark != (b < 0.15) else 0
+			transitions += 1 if is_dark != was_dark else 0
+			was_dark = is_dark
+		_expect(dark_count > 0 and bright_count > 600, "short dropouts have long bright intervals")
+		_expect(independent_count > 20, "adjacent and opposite-color lamps blink independently")
+		_expect(transitions > 8 and transitions < 100, "local blink bursts stay bounded")
+	_expect(JSON.stringify(model.semantic_state()) == state_before, "animation sampling never changes syndrome state")
+
+
+func _test_boundary_lesson() -> void:
+	for alternative in [false, true]:
+		var model := Tutorial.new()
+		model.stage_index = 5
+		model._reset_stage()
+		_expect(model.stages().size() == 7, "seven lesson progress")
+		_expect(model.lit_red_checks().size() == 1 and model.lit_blue_checks().is_empty(), "one red edge syndrome")
+		model.confirm_dialogue()
+		model.tap_node(0, 1 if alternative else 0)
+		_expect(model.is_dark() and model.inspection.safe and model.result_visible, "red boundary correction is safe including equivalent solution")
+		model.next_stage()
+		_expect(model.stage_index == 5 and model.boundary_phase == 1 and model.dialogue_visible, "blue follows red within the same lesson")
+		_expect(model.lit_blue_checks().size() == 1 and model.lit_red_checks().is_empty(), "one blue edge syndrome")
+		model.confirm_dialogue()
+		model.tap_node(1 if alternative else 0, 2)
+		_expect(not model.is_dark() and not model.result_visible, "intermediate red does not solve blue")
+		model.tap_node(1 if alternative else 0, 2)
+		_expect(model.is_dark() and model.inspection.safe, "blue boundary correction is safe including equivalent solution")
+		model.next_stage()
+		_expect(model.stage_index == 6 and model.definition().id == "graduation_3x3", "boundary leads to final review")
+		model.restart()
+		_expect(model.boundary_phase == 0, "replay resets boundary practice")
+	# A zero-syndrome logical string must not advance the boundary lesson.
+	var model := Tutorial.new()
+	model.stage_index = 5
+	model._reset_stage()
+	model.confirm_dialogue()
+	model.corrections[0] = Tutorial.RED
+	for node in [2, 5, 8]:
+		model.corrections[node] ^= Tutorial.RED
+	_expect(model.is_dark() and not model.inspect_floor().safe, "boundary still detects logical errors")
+	model.next_stage()
+	_expect(model.stage_index == 5 and model.boundary_phase == 0 and not model.result_visible, "unsafe boundary solution stays available to repair")

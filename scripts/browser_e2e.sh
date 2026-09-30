@@ -6,7 +6,7 @@ export CHROME_DEVTOOLS_AXI_SESSION="$session_name"
 
 mkdir -p artifacts build/web
 godot --headless --path . --export-release Web build/web/index.html
-python3 -m http.server 8877 --directory build/web >artifacts/browser-server.txt 2>&1 &
+python3 -m http.server 8877 --bind 127.0.0.1 --directory build/web >artifacts/browser-server.txt 2>&1 &
 server_pid=$!
 
 for _attempt in 1 2 3 4 5; do
@@ -82,20 +82,10 @@ cycle_grid_3x3() {
   local ys=(214 309 404)
   for row in 0 1 2; do
     for column in 0 1 2; do
-      if [[ "$stage" != "stage4" && "$row" == "1" && "$column" == "1" ]]; then
+      if [[ "$stage" != "stage4" && "$stage" != "stage7" && "$row" == "1" && "$column" == "1" ]]; then
         continue
       fi
       click_canvas "${xs[$column]}" "${ys[$row]}" "${stage}-cycle-box-${row}-${column}" 4
-    done
-  done
-}
-
-cycle_grid_5x5() {
-  local xs=(60 127 195 263 330)
-  local ys=(191 258 326 394 461)
-  for row in 0 1 2 3 4; do
-    for column in 0 1 2 3 4; do
-      click_canvas "${xs[$column]}" "${ys[$row]}" "stage6-cycle-box-${row}-${column}" 4
     done
   done
 }
@@ -157,27 +147,51 @@ capture_state 17 stage5-failure-witness
 chrome-devtools-axi screenshot artifacts/tutorial-crossing-trap.png >/dev/null
 click_canvas 195 793 stage5-next
 
-capture_state 18 stage6-intro-dialogue
-click_canvas 195 793 stage6-confirm-dialogue
-capture_state 19 stage6-pre-action-call-disabled
-click_canvas 195 793 stage6-disabled-call
+assert_state "window.discoBreakerState.stage === 6 && window.discoBreakerState.stage_count === 7 && window.discoBreakerState.lit_red.length === 1 && window.discoBreakerState.lit_blue.length === 0"
+capture_state 17a stage6-red-intro
+click_canvas 195 793 stage6-red-confirm
+capture_state 17b stage6-red-ready
+click_canvas 100 214 stage6-red-edge
+assert_state "window.discoBreakerState.floor_dark && window.discoBreakerState.inspection.safe"
+capture_state 17c stage6-red-cleared
+click_canvas 195 793 stage6-try-blue
+assert_state "window.discoBreakerState.stage === 6 && window.discoBreakerState.boundary_phase === 1 && window.discoBreakerState.lit_blue.length === 1 && window.discoBreakerState.lit_red.length === 0"
+capture_state 17d stage6-blue-intro
+click_canvas 195 793 stage6-blue-confirm
+capture_state 17e stage6-blue-ready
+click_canvas 290 214 stage6-blue-intermediate-red
+assert_state "!window.discoBreakerState.floor_dark && !window.discoBreakerState.result_visible"
+capture_state 17f stage6-blue-intermediate-red
+click_canvas 290 214 stage6-blue-edge
+assert_state "window.discoBreakerState.floor_dark && window.discoBreakerState.inspection.safe"
+capture_state 17g stage6-blue-cleared
+click_canvas 195 793 stage6-next
+
+capture_state 18 stage7-intro-dialogue
+click_canvas 195 793 stage7-confirm-dialogue
+capture_state 19 stage7-pre-action-call-disabled
+click_canvas 195 793 stage7-disabled-call
 assert_state "!window.discoBreakerState.can_call_foreman && window.discoBreakerState.last_action.action === 'confirm_dialogue'"
-cycle_grid_5x5
-assert_state "window.discoBreakerState.corrections.every(value => value === 0)"
-click_canvas 195 326 stage6-place-center-red
-capture_state 20 stage6-after-center-red
-click_canvas 263 191 stage6-top-cycle-red
-capture_state 21 stage6-top-intermediate-red
-click_canvas 263 191 stage6-top-cycle-blue
-capture_state 22 stage6-after-top-blue
-click_canvas 127 461 stage6-place-lower-red
+cycle_grid_3x3 stage7
+assert_state "window.discoBreakerState.grid_size === 3 && window.discoBreakerState.corrections.every(value => value === 0)"
+capture_state 19a two-red-flickers-before
+click_canvas 195 309 stage7-regression-center-red
+assert_state "window.discoBreakerState.lit_red.length === 0 && window.discoBreakerState.lit_blue.length > 0"
+capture_state 19b two-red-flickers-after
+click_canvas 195 309 stage7-regression-center-reset 3
+click_canvas 195 309 stage7-place-center-red
+capture_state 20 stage7-after-center-red
+click_canvas 290 214 stage7-corner-cycle-red
+capture_state 21 stage7-corner-intermediate-red
+click_canvas 290 214 stage7-corner-cycle-blue
+capture_state 22 stage7-after-corner-blue
 assert_state "window.discoBreakerState.can_call_foreman"
-capture_state 23 stage6-inspection-ready
-click_canvas 195 793 stage6-call-foreman
+capture_state 23 stage7-inspection-ready
+click_canvas 195 793 stage7-call-foreman
 assert_state "window.discoBreakerState.inspection.safe"
-capture_state 24 stage6-graduation-passed
+capture_state 24 stage7-graduation-passed
 chrome-devtools-axi screenshot artifacts/tutorial-graduation.png >/dev/null
-click_canvas 195 793 stage6-complete
+click_canvas 195 793 stage7-complete
 assert_state "window.discoBreakerState.finished"
 capture_state 25 tutorial-complete
 click_canvas 195 793 graduation-run-replay
@@ -205,16 +219,23 @@ click_canvas 195 793 skip-run-stage4-call
 click_canvas 195 793 skip-run-stage4-next
 click_canvas 195 793 skip-run-stage5-confirm
 click_canvas 195 793 skip-run-stage5-next
-click_canvas 195 793 skip-run-stage6-confirm
-assert_state "window.discoBreakerState.stage_id === 'graduation_5x5' && !window.discoBreakerState.finished"
-click_canvas 195 735 stage6-skip-optional
+click_canvas 195 793 skip-run-stage7-confirm
+assert_state "window.discoBreakerState.stage_id === 'boundary_single'"
+click_canvas 100 214 skip-run-stage6-red
+click_canvas 195 793 skip-run-stage6-try-blue
+click_canvas 195 793 skip-run-stage6-blue-confirm
+click_canvas 290 214 skip-run-stage6-blue 2
+click_canvas 195 793 skip-run-stage6-next
+click_canvas 195 793 skip-run-stage7-confirm-review
+assert_state "window.discoBreakerState.stage_id === 'graduation_3x3' && !window.discoBreakerState.finished"
+click_canvas 195 735 stage7-skip-optional
 assert_state "window.discoBreakerState.finished"
 capture_state 26 optional-graduation-skipped
 click_canvas 195 793 optional-skip-run-replay
 assert_state "window.discoBreakerState.stage_id === 'red_one_tap' && !window.discoBreakerState.finished"
 
-jq -e -s 'length == 26 and all(.viewport.width == 390 and .viewport.height == 844)' "$inventory_file" >/dev/null
-jq -e -s 'any(.[]; .action == "stage6-disabled-call") and any(.[]; .action == "stage6-skip-optional") and any(.[]; .action == "graduation-run-replay") and any(.[]; .action == "optional-skip-run-replay")' "$action_file" >/dev/null
+jq -e -s 'length == 35 and all(.viewport.width == 390 and .viewport.height == 844)' "$inventory_file" >/dev/null
+jq -e -s 'any(.[]; .action == "stage7-disabled-call") and any(.[]; .action == "stage7-skip-optional") and any(.[]; .action == "graduation-run-replay") and any(.[]; .action == "optional-skip-run-replay")' "$action_file" >/dev/null
 montage_inputs=()
 for index in "${!captures[@]}"; do
   printf -v label '%02d' "$((index + 1))"
@@ -223,4 +244,4 @@ done
 magick montage "${montage_inputs[@]}" -thumbnail 195x422 -tile 4x -geometry +8+24 -background '#120a24' -fill '#f7f1e3' -pointsize 14 artifacts/tutorial-audit-contact-sheet.png
 
 chrome-devtools-axi console --type error >artifacts/browser-console.txt
-printf 'PASS: browser audited 26 tutorial states and every connection box\n'
+printf 'PASS: browser audited 35 tutorial states and every connection box\n'

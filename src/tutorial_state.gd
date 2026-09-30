@@ -9,6 +9,7 @@ const BLUE := 2
 const BOTH := 3
 
 var stage_index := 0
+var boundary_phase := 0
 var dialogue_visible := true
 var result_visible := false
 var finished := false
@@ -24,59 +25,91 @@ func _init() -> void:
 
 
 func stages() -> Array[Dictionary]:
-	return [
+	var definitions: Array[Dictionary] = [
 		{
 			"id": "red_one_tap", "title": "RED: ONE TAP", "size": 3,
 			"coach": "Tap the middle box once.\nMake a red wire!",
 			"hidden": {4: RED}, "preset": {}, "target": 4,
-			"red_checks": [[4], [4]], "blue_checks": [],
-			"red_tiles": [0, 3], "blue_tiles": [],
-			"red_cut": [], "blue_cut": [], "witness_red": [], "witness_blue": [],
 		},
 		{
 			"id": "blue_two_taps", "title": "BLUE: TWO TAPS", "size": 3,
 			"coach": "Tap the middle box twice.\nRed changes to blue.",
 			"hidden": {4: BLUE}, "preset": {}, "target": 4,
-			"red_checks": [], "blue_checks": [[4], [4]],
-			"red_tiles": [], "blue_tiles": [1, 2],
-			"red_cut": [], "blue_cut": [], "witness_red": [], "witness_blue": [],
 		},
 		{
 			"id": "combined_three_taps", "title": "BOTH: THREE TAPS", "size": 3,
 			"coach": "Tap the middle box 3 times.\nMake both wires cross!",
 			"hidden": {4: BOTH}, "preset": {}, "target": 4,
-			"red_checks": [[4], [4]], "blue_checks": [[4], [4]],
-			"red_tiles": [0, 3], "blue_tiles": [1, 2],
-			"red_cut": [], "blue_cut": [], "witness_red": [], "witness_blue": [],
 		},
 		{
 			"id": "foreman_inspection", "title": "CALL FOR INSPECTION", "size": 3,
 			"coach": "All dark is not always safe.\nCall me to inspect it.",
 			"hidden": {4: BOTH}, "preset": {4: BOTH}, "target": -1,
-			"red_checks": [[4], [4]], "blue_checks": [[4], [4]],
-			"red_tiles": [0, 3], "blue_tiles": [1, 2],
-			"red_cut": [0, 4, 8], "blue_cut": [2, 4, 6],
-			"witness_red": [0, 4, 8], "witness_blue": [2, 4, 6],
 		},
 		{
 			"id": "crossing_trap", "title": "THE CROSSING TRAP", "size": 3,
 			"coach": "Dark floors can still leak.\nLet's inspect this one.",
-			"hidden": {4: RED}, "preset": {0: RED, 8: RED}, "target": -1,
-			"red_checks": [[4, 0], [4, 8]], "blue_checks": [],
-			"red_tiles": [0, 3], "blue_tiles": [],
-			"red_cut": [0, 4, 8], "blue_cut": [2, 4, 6],
-			"witness_red": [0, 4, 8], "witness_blue": [2, 4, 6],
+			"hidden": {4: RED}, "preset": {1: RED, 7: RED}, "target": -1,
 		},
 		{
-			"id": "graduation_5x5", "title": "OPTIONAL 5 × 5", "size": 5,
-			"coach": "Try one full-size floor.\nStop every flicker!",
-			"hidden": {12: RED, 3: BLUE, 21: RED}, "preset": {}, "target": -1,
-			"red_checks": [[12], [12], [21]], "blue_checks": [[3], [3]],
-			"red_tiles": [5, 10, 13], "blue_tiles": [2, 7],
-			"red_cut": [0, 6, 12, 18, 24], "blue_cut": [4, 8, 12, 16, 20],
-			"witness_red": [0, 6, 12, 18, 24], "witness_blue": [4, 8, 12, 16, 20],
+			"id": "boundary_single", "title": "EDGE: RED" if boundary_phase == 0 else "EDGE: BLUE", "size": 3,
+			"coach": "Inside flips two.\nEdges can flip one.\nTop-left: tap once." if boundary_phase == 0 else "Now the blue edge.\nTop-right: tap twice.\nRed changes to blue.",
+			"hidden": {0: RED} if boundary_phase == 0 else {2: BLUE},
+			"preset": {}, "target": 0 if boundary_phase == 0 else 2,
+			"hint_taps": 1 if boundary_phase == 0 else 2,
+		},
+		{
+			"id": "graduation_3x3", "title": "OPTIONAL 3 × 3", "size": 3,
+			"coach": "One small practice floor.\nStop red and blue flickers!",
+			"hidden": {4: RED, 2: BLUE}, "preset": {}, "target": -1,
 		},
 	]
+
+	for d in definitions:
+		_with_geometry(d)
+	return definitions
+
+
+func _with_geometry(d: Dictionary) -> Dictionary:
+	d.red_faces = _faces(int(d.size), RED)
+	d.blue_faces = _faces(int(d.size), BLUE)
+	d.red_checks = []
+	d.blue_checks = []
+	for face in d.red_faces:
+		d.red_checks.append(face.nodes)
+	for face in d.blue_faces:
+		d.blue_checks.append(face.nodes)
+	d.red_cut = []
+	d.blue_cut = []
+	for i in int(d.size):
+		d.red_cut.append(i)
+		d.blue_cut.append(i * int(d.size))
+	d.witness_red = [1, 4, 7] if int(d.size) == 3 else [2, 7, 12, 17, 22]
+	d.witness_blue = []
+	return d
+
+# Independently constructed rotated surface-code checks. RED is X correction,
+# detected by Z checks; BLUE is Z correction, detected by X checks.
+func _faces(size: int, component: int) -> Array[Dictionary]:
+	var faces: Array[Dictionary] = []
+	for row in size - 1:
+		for column in size - 1:
+			if ((row + column) % 2 == 0) == (component == RED):
+				var q := row * size + column
+				faces.append({"nodes": [q, q + 1, q + size, q + size + 1],
+					"center": Vector2(column + 1, row + 1), "extent": Vector2(0.96, 0.96)})
+	for i in size - 1:
+		if component == RED:
+			var column := 0 if i % 2 == 1 else size - 1
+			faces.append({"nodes": [i * size + column, (i + 1) * size + column],
+				"center": Vector2(0.25 if column == 0 else size - 0.25, i + 1),
+				"extent": Vector2(0.44, 0.96)})
+		else:
+			var row := 0 if i % 2 == 0 else size - 1
+			faces.append({"nodes": [row * size + i, row * size + i + 1],
+				"center": Vector2(i + 1, 0.25 if row == 0 else size - 0.25),
+				"extent": Vector2(0.96, 0.44)})
+	return faces
 
 
 func definition() -> Dictionary:
@@ -107,6 +140,8 @@ func tap_node(row: int, column: int) -> bool:
 	if stage_index <= 2 and is_dark():
 		result_visible = true
 		_record("lesson_solved", {"stage": definition().id})
+	if definition().id == "boundary_single" and is_dark():
+		inspect_floor()
 	return true
 
 
@@ -132,6 +167,17 @@ func inspect_floor() -> Dictionary:
 func next_stage() -> void:
 	if not result_visible:
 		return
+	if definition().id == "boundary_single":
+		if not bool(inspection.get("safe", false)):
+			result_visible = false
+			inspection = {}
+			_record("retry_boundary", {})
+			return
+		if boundary_phase == 0:
+			boundary_phase = 1
+			_reset_stage()
+			_record("boundary_blue", {})
+			return
 	if stage_index == stages().size() - 1:
 		finished = true
 		result_visible = false
@@ -144,7 +190,7 @@ func next_stage() -> void:
 
 
 func skip_graduation() -> void:
-	if stage_index == 5 and not finished:
+	if definition().id == "graduation_3x3" and not finished:
 		finished = true
 		result_visible = false
 		dialogue_visible = true
@@ -153,6 +199,7 @@ func skip_graduation() -> void:
 
 func restart() -> void:
 	stage_index = 0
+	boundary_phase = 0
 	finished = false
 	_reset_stage()
 	_record("restart", {})
@@ -181,6 +228,7 @@ func semantic_state() -> Dictionary:
 		"stage": stage_index + 1,
 		"stage_id": d.id,
 		"stage_count": stages().size(),
+		"boundary_phase": boundary_phase,
 		"grid_size": d.size,
 		"dialogue_visible": dialogue_visible,
 		"result_visible": result_visible,

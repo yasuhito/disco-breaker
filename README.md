@@ -1,8 +1,8 @@
 # DISCO BREAKER tutorial
 
-A narrow, playable six-stage tutorial vertical slice for Godot 4.7.2. It contains only the tutorial: no title flow, campaign, score, lives, progression, inventory, live services, or analytics.
+A narrow, playable seven-stage tutorial vertical slice for Godot 4.7.2. It contains only the tutorial: no title flow, campaign, score, lives, progression, inventory, live services, or analytics.
 
-The portrait UI teaches one-tap red wiring, two-tap blue wiring, three-tap combined wiring, foreman inspection, the cleared-looking crossing trap, and an optional 5 × 5 graduation floor. Tap a connection box to cycle `empty → red → blue → combined → empty`. Child-facing copy deliberately avoids developer operator labels. There is no keyboard or gamepad path: every control is a tap/click on the portrait canvas, including dialogue confirmation and the foreman call button.
+The portrait UI teaches one-tap red wiring, two-tap blue wiring, three-tap combined wiring, foreman inspection, the cleared-looking crossing trap, and an optional 3 × 3 practice floor. Tap a connection box to cycle `empty → red → blue → combined → empty`. Child-facing copy deliberately avoids developer operator labels. There is no keyboard or gamepad path: every control is a tap/click on the portrait canvas, including dialogue confirmation and the foreman call button.
 
 ## Play it
 
@@ -47,7 +47,13 @@ This is a tutorial-only vertical slice. It does not and will not include a title
 
 ## Code seams
 
-- `src/tutorial_state.gd`: the six fixed tutorial definitions, deterministic tap cycling, dialogue gates, semantic state, and action trace.
+- `src/tutorial_state.gd`: the seven fixed tutorial definitions, deterministic tap cycling, dialogue gates, semantic state, and action trace.
 - `src/inspection_semantics.gd`: independent red/blue mod-2 boundary-crossing classification. Witness paths are generated only after an odd logical class is computed, so artwork cannot decide the verdict.
-- `src/tutorial_view.gd`: stable 390 × 844 portrait drawing, touch hit testing, the separable-feature foreman SVG and mouth animation, reduced motion, and Web semantic-state publication.
+- `src/tutorial_view.gd`: stable 390 × 844 portrait drawing, touch hit testing, the foreman SVG and tactile console presentation, reduced motion, and Web semantic-state publication.
 - `tests/run_tests.gd`: tap cycle, guided lessons, independent crossing classes, trap, graduation, and semantic contract.
+
+The final practice needs only three taps from an empty board: red at row 2, column 2, then blue at row 1, column 3 (two taps). Coordinates count from the top left. Calling the foreman passes with no logical error. The optional skip remains available. Campaign gameplay is not implemented in this tutorial-only repository.
+
+Boundary lesson (sixth dot): on a 3 × 3 floor, clear the single red edge syndrome by tapping the upper-left box once, then clear the single blue edge syndrome by tapping the upper-right box twice. Interior placements flip two incident checks; these edge placements flip one. Each exercise uses the same syndrome and logical inspection as final practice, accepting stabilizer-equivalent corrections. The final optional review is the seventh lesson.
+
+The UI uses a tactile disco lighting-console direction. Roboto Regular/Bold are bundled under the SIL Open Font License (see `assets/fonts/OFL.txt`); no external font request is needed. Native mobile touches and mouse clicks share the same one-step input behavior.

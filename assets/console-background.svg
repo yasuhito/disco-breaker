@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="1688" viewBox="0 0 390 844">
+<defs><linearGradient id="stage" x2="0" y2="1"><stop stop-color="#282039"/><stop offset="1" stop-color="#100e1b"/></linearGradient><pattern id="grille" width="8" height="8" patternUnits="userSpaceOnUse"><path d="M7 0v8" stroke="#c0a6d4" stroke-opacity=".09" stroke-width="2"/></pattern></defs>
+<path fill="url(#stage)" d="M0 0h390v844H0z"/>
+<path fill="#cc94e0" fill-opacity=".025" d="M50 0h125L5 540zM340 0H215l170 540z"/>
+<path fill="url(#grille)" d="M31 564h335v8H31z"/>
+<path d="M24 588h342" stroke="#ffdbab" stroke-opacity=".09"/>
+</svg>

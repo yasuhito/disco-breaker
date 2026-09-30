@@ -66,17 +66,7 @@ async function cycleGrid3x3(stage) {
   const ys = [214, 309, 404];
   for (let row = 0; row < 3; row += 1) {
     for (let column = 0; column < 3; column += 1) {
-      if (stage !== "stage4" && row === 1 && column === 1) continue;
-      await clickCanvas(xs[column], ys[row], 4);
-    }
-  }
-}
-
-async function cycleGrid5x5() {
-  const xs = [60, 127, 195, 263, 330];
-  const ys = [191, 258, 326, 394, 461];
-  for (let row = 0; row < 5; row += 1) {
-    for (let column = 0; column < 5; column += 1) {
+      if (stage !== "stage4" && stage !== "stage7" && row === 1 && column === 1) continue;
       await clickCanvas(xs[column], ys[row], 4);
     }
   }
@@ -133,24 +123,46 @@ try {
   await captureState("stage5-failure-witness");
   await clickCanvas(195, 793);
 
-  await captureState("stage6-intro-dialogue");
+  await assertState("state.stage === 6 && state.stage_count === 7 && state.stage_id === 'boundary_single' && state.lit_red.length === 1 && state.lit_blue.length === 0", "single red boundary lesson");
+  await captureState("stage6-red-intro");
+  await clickCanvas(195,793);
+  await captureState("stage6-red-ready");
+  await clickCanvas(100,214);
+  await assertState("state.floor_dark && state.inspection.safe && state.result_visible", "one tap safely clears red edge");
+  await captureState("stage6-red-cleared");
+  await clickCanvas(195,793);
+  await assertState("state.stage === 6 && state.boundary_phase === 1 && state.lit_blue.length === 1 && state.lit_red.length === 0", "single blue boundary follows red");
+  await captureState("stage6-blue-intro");
+  await clickCanvas(195,793);
+  await captureState("stage6-blue-ready");
+  await clickCanvas(290,214);
+  await assertState("!state.floor_dark && !state.result_visible", "red intermediate does not clear blue");
+  await captureState("stage6-blue-intermediate-red");
+  await clickCanvas(290,214);
+  await assertState("state.floor_dark && state.inspection.safe && state.result_visible", "two taps safely clear blue edge");
+  await captureState("stage6-blue-cleared");
+  await clickCanvas(195,793);
+  await captureState("stage7-intro-dialogue");
   await clickCanvas(195, 793);
   await clickCanvas(195, 793);
   await assertState(
     "!state.can_call_foreman && state.last_action.action === 'confirm_dialogue'",
-    "stage6 foreman call stays disabled before the grid is wired",
+    "stage7 foreman call stays disabled before the grid is wired",
   );
-  await cycleGrid5x5();
-  await assertState("state.corrections.every((value) => value === 0)", "stage6 5x5 grid returns to neutral after cycling");
-  await clickCanvas(195, 326);
-  await clickCanvas(263, 191);
-  await clickCanvas(263, 191);
-  await clickCanvas(127, 461);
-  await assertState("state.can_call_foreman", "stage6 wiring enables calling the foreman");
-  await captureState("stage6-inspection-ready");
+  await cycleGrid3x3("stage7");
+  await assertState("state.grid_size === 3 && state.corrections.every(value => value === 0)", "final practice is a neutral 3x3 floor");
+  await captureState("two-red-flickers-before");
+  await clickCanvas(195,309);
+  await assertState("state.lit_red.length === 0 && state.lit_blue.length > 0", "red immediately clears both adjacent red flickers");
+  await captureState("two-red-flickers-after");
+  await clickCanvas(195,309,3);
+  await clickCanvas(195,309);
+  await clickCanvas(290,214,2);
+  await assertState("state.can_call_foreman", "stage7 wiring enables calling the foreman");
+  await captureState("stage7-inspection-ready");
   await clickCanvas(195, 793);
-  await assertState("state.inspection.safe", "stage6 graduation inspection passes");
-  await captureState("stage6-graduation-passed");
+  await assertState("state.inspection.safe", "stage7 graduation inspection passes");
+  await captureState("stage7-graduation-passed");
   await clickCanvas(195, 793);
   await assertState("state.finished", "tutorial reports finished");
   await captureState("tutorial-complete");
@@ -178,18 +190,47 @@ try {
   await clickCanvas(195, 793);
   await clickCanvas(195, 793);
   await clickCanvas(195, 793);
-  await assertState("state.stage_id === 'graduation_5x5' && !state.finished", "optional skip run reaches graduation");
+  await assertState("state.stage_id === 'boundary_single'", "skip run reaches boundary lesson");
+  await clickCanvas(100,214);
+  await clickCanvas(195,793);
+  await clickCanvas(195,793);
+  await clickCanvas(290,214,2);
+  await clickCanvas(195,793);
+  await clickCanvas(195,793);
+  await assertState("state.stage_id === 'graduation_3x3' && !state.finished", "optional skip run reaches graduation");
   await clickCanvas(195, 735);
   await assertState("state.finished && state.last_action.action === 'skip_graduation'", "optional graduation skip finishes tutorial");
   await captureState("optional-graduation-skipped");
   await clickCanvas(195, 793);
   await assertState("state.stage_id === 'red_one_tap' && !state.finished", "optional skip replay resets to stage 1");
 
+  // Native mobile touches must not also cycle a wire through emulated mouse input.
+  const touchPage = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  touchPage.on("pageerror", (error) => consoleErrors.push(String(error)));
+  touchPage.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
+  await touchPage.goto(baseUrl);
+  await touchPage.waitForFunction(() => window.discoBreakerState);
+  const touch = async (x, y) => { await touchPage.touchscreen.tap(x, y); await touchPage.waitForTimeout(100); };
+  await touch(195, 793);
+  const initialCount = await touchPage.evaluate(() => window.discoBreakerState.action_count);
+  for (let value = 1; value <= 4; value += 1) {
+    await touch(100, 214);
+    const state = await touchPage.evaluate(() => window.discoBreakerState);
+    if (state.corrections[0] !== value % 4 || state.action_count !== initialCount + value) {
+      throw new Error(`one touch must produce one wire change: ${JSON.stringify(state)}`);
+    }
+  }
+  await touch(195, 309);
+  const touched = await touchPage.evaluate(() => window.discoBreakerState);
+  if (!touched.result_visible || !touched.floor_dark || touched.corrections[4] !== 1) throw new Error("native mobile touch failed to solve red lesson");
+  await touchPage.screenshot({ path: `${artifactsDir}/mobile-touch-success.png` });
+  await touchPage.close();
+
   if (consoleErrors.length > 0) {
     throw new Error(`console errors detected:\n${consoleErrors.join("\n")}`);
   }
 
-  console.log(`PASS: browser audited ${captureIndex} tutorial states, every connection box, and optional skip`);
+  console.log(`PASS: browser audited ${captureIndex} tutorial states, every connection box, optional skip, and native mobile touch`);
 } finally {
   await browser.close();
 }
