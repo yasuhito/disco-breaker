@@ -75,11 +75,12 @@ try {
   assert.equal((await feedback(page)).sound_starts, 0);
   assert.equal((await feedback(page)).lamp_sound_starts, 0);
   await page.screenshot({ path: `${out}/title-reflections-a.png` });
-  const wallA = await page.screenshot({clip:{x:6,y:195,width:50,height:220}});
+  // Mirror beams leave the ball's underside above the floor.
+  const beamsA = await page.screenshot({clip:{x:96,y:344,width:198,height:80}});
   const floorA = await page.screenshot({clip:{x:24,y:435,width:342,height:186}});
   await page.waitForTimeout(1700);
   await page.screenshot({ path: `${out}/title-reflections-b.png` });
-  assert.notDeepEqual(await page.screenshot({clip:{x:6,y:195,width:50,height:220}}), wallA, 'wall reflections move');
+  assert.notDeepEqual(await page.screenshot({clip:{x:96,y:344,width:198,height:80}}), beamsA, 'mirror beams move');
   assert.notDeepEqual(await page.screenshot({clip:{x:24,y:435,width:342,height:186}}), floorA, 'glass lighting moves');
   assert.deepEqual(await state(page), launch, 'animation cannot change gameplay');
   // Entry and the lesson OK overlap; a rapid second click must not skip copy.

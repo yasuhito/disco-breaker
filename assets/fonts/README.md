@@ -1,6 +1,5 @@
 # Bundled fonts
 
-- Roboto Regular/Bold: SIL Open Font License 1.1, `OFL.txt`. Retained for the existing wordmark artwork.
 - Noto Sans CJK JP Regular 2.004: copyright 2014-2021 Adobe (http://www.adobe.com/), SIL Open Font License 1.1, `NotoSansJP-OFL.txt`. Japanese UI uses this local font, with a Godot FontVariation for slightly heavier headings. No system fallback or network font is required.
 
 `NotoSansJP-Regular.otf` is the Japanese face (index 0) of Noto Sans CJK Regular, subset with FontTools to retain Latin, Japanese kana/kanji, punctuation and symbols rather than bundling the five-region collection. The source is the Arch Linux `noto-fonts-cjk` package's `/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc` (upstream: https://github.com/notofonts/noto-cjk).

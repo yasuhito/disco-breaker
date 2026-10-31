@@ -255,12 +255,12 @@ func _draw() -> void:
 	_scale = minf(size.x / DESIGN_SIZE.x, size.y / DESIGN_SIZE.y)
 	_offset = (size - DESIGN_SIZE * _scale) * 0.5
 	draw_set_transform(_offset, 0.0, Vector2.ONE * _scale)
-	_draw_background()
 	if at_title:
+		# The title paints its whole design area, including its own audio control.
 		_title_art.draw(self, _elapsed, reduced_motion, _tutorial_started, model.finished)
-		_draw_mute_toggle()
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		return
+	_draw_background()
 	_draw_app_bar()
 	_draw_progress()
 	_draw_board()

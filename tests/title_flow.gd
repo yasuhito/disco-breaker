@@ -17,6 +17,7 @@ func _run() -> void:
 	await process_frame
 	var initial: Dictionary = view.semantic_state()
 	_expect(initial.screen == "title" and not initial.campaign_available, "launch shows title, not campaign")
+	_expect(view._mute_rect == View.Title.MUTE_RECT, "title audio art covers the shared audio hit area")
 	view._handle_design_tap(Vector2(195, 675))
 	view._handle_design_tap(Vector2(195, 309))
 	_expect(view.semantic_state() == initial, "disabled repair and decorative floor cannot change tutorial")
@@ -74,8 +75,13 @@ func _run() -> void:
 	view._handle_design_tap(Vector2(195, 793))
 	view._handle_design_tap(Vector2(195, 793))
 	_expect(view.model.stage_index == 0 and view.model.dialogue_visible, "double Replay cannot dismiss the first lesson")
+	# Stopped playback leaves the audio server on its own mixing thread; give
+	# it real time so no stream is still referenced at exit.
+	view._audio.stop()
+	view._lamp_audio.stop()
 	view.queue_free()
 	await process_frame
+	await create_timer(0.2).timeout
 	if failures.is_empty():
 		print("PASS: title launch, disabled campaign, rapid input, pause/resume and replay")
 	else:

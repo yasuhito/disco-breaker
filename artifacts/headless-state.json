@@ -1,29 +1,14 @@
 {
-  "action_count": 29,
+  "action_count": 37,
+  "boundary_phase": 1,
   "can_call_foreman": false,
   "corrections": [
     0,
     0,
-    0,
     2,
     0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
     1,
     0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
     0,
     0,
     0
@@ -31,7 +16,7 @@
   "dialogue_visible": true,
   "finished": true,
   "floor_dark": true,
-  "grid_size": 5,
+  "grid_size": 3,
   "inspection": {
     "blue_crossing": false,
     "blue_witness": [],
@@ -43,14 +28,14 @@
     "action": "tutorial_complete",
     "floor_dark": true,
     "payload": {},
-    "sequence": 29,
-    "stage_id": "graduation_5x5"
+    "sequence": 37,
+    "stage_id": "graduation_3x3"
   },
   "lit_blue": [],
   "lit_red": [],
   "result_visible": false,
   "schema": "disco-breaker-tutorial-state.v1",
-  "stage": 6,
-  "stage_count": 6,
-  "stage_id": "graduation_5x5"
+  "stage": 7,
+  "stage_count": 7,
+  "stage_id": "graduation_3x3"
 }
