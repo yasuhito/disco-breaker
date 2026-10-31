@@ -8,8 +8,8 @@ const Rewards := preload("res://src/reward_feedback.gd")
 const Sounds := preload("res://src/reward_sound.gd")
 const Flicker := preload("res://src/fault_flicker.gd")
 const CopyLayout := preload("res://src/text_layout.gd")
-const FONT := preload("res://assets/fonts/Roboto-Regular.ttf")
-const BOLD_FONT := preload("res://assets/fonts/Roboto-Bold.ttf")
+const FONT := preload("res://assets/fonts/NotoSansJP-Regular.otf")
+const BOLD_FONT := preload("res://assets/fonts/NotoSansJP-Bold.tres")
 const BACKGROUND := preload("res://assets/console-background.svg")
 const HOUSING := preload("res://assets/console-housing.svg")
 const SOCKET := preload("res://assets/socket.svg")
@@ -283,13 +283,13 @@ func _draw_app_bar() -> void:
 	_draw_mute_toggle()
 	draw_line(Vector2(24, 67), Vector2(366, 67), Color(1, 0.87, 0.68, 0.12), 1)
 	var titles := {
-		"red_one_tap": "The red connection",
-		"blue_two_taps": "The blue connection",
-		"combined_three_taps": "Make them cross",
-		"foreman_inspection": "The safety check",
-		"crossing_trap": "A hidden power leak",
-		"boundary_single": "One light at the edge",
-		"graduation_3x3": "Your turn to shine",
+		"red_one_tap": "赤い配線",
+		"blue_two_taps": "青い配線",
+		"combined_three_taps": "赤と青を交差",
+		"foreman_inspection": "親方の安全検査",
+		"crossing_trap": "見えない漏電",
+		"boundary_single": "端の床を消そう",
+		"graduation_3x3": "自分で直してみよう",
 	}
 	var title: String = titles.get(_definition.id, _definition.title)
 	_draw_text(title, Vector2(195 - _text_width(title, 25, true) * 0.5, 109), 25, PAPER, true)
@@ -553,32 +553,32 @@ func _draw_footer() -> void:
 	if model.dialogue_visible:
 		if model.finished:
 			_secondary_rect = Rect2(18, 556, 354, 38)
-			_draw_button(_secondary_rect, "BACK TO TITLE", Color("#49365e"), true)
+			_draw_button(_secondary_rect, "タイトルへ", Color("#49365e"), true)
 		_draw_dialogue()
-		_draw_button(_primary_rect, "REPLAY" if model.finished else "OK", PINK, true)
+		_draw_button(_primary_rect, "もう一度" if model.finished else "わかった", PINK, true)
 		return
 	if model.result_visible:
 		_draw_result()
-		var label := "TUTORIAL COMPLETE" if _definition.id == "graduation_3x3" else "NEXT"
+		var label := "練習を終える" if _definition.id == "graduation_3x3" else "次へ"
 		if _definition.id == "boundary_single":
-			label = ("TRY BLUE" if model.boundary_phase == 0 else "NEXT") if _result_safe() else "TRY AGAIN"
+			label = ("次は青に挑戦" if model.boundary_phase == 0 else "次へ") if _result_safe() else "やり直す"
 		if model.stage_index != 4 and not _result_safe():
-			label = "TRY AGAIN"
+			label = "やり直す"
 		_draw_button(_primary_rect, label, GREEN if _result_safe() else PINK, true)
 		return
 	if _definition.id == "graduation_3x3":
-		_draw_button(_secondary_rect, "SKIP OPTIONAL STAGE", Color("#49365e"), true)
+		_draw_button(_secondary_rect, "自由練習をスキップ", Color("#49365e"), true)
 	var enabled := model.can_call_foreman()
 	if model.stage_index >= 3:
-		_draw_button(_primary_rect, "CALL THE FOREMAN", AMBER if enabled else Color("#4b4156"), enabled)
+		_draw_button(_primary_rect, "親方を呼ぶ", AMBER if enabled else Color("#4b4156"), enabled)
 
 
 func _draw_dialogue() -> void:
 	var rect := Rect2(18, 610, 354, 137)
 	_surface(rect, Color("#f0e5cf"), Color("#fff3db"), 20, 5)
 	_draw_portrait(Vector2(70, 680), true)
-	_draw_text("THE FOREMAN", Vector2(130, 638), 10, Color("#7a573e"), true)
-	var text := "All seven lessons done!\nYou're ready to dance." if model.finished else String(_definition.coach)
+	_draw_text("親方", Vector2(130, 638), 10, Color("#7a573e"), true)
+	var text := "全7レッスン修了！\nこれで踊る準備は万全だ。" if model.finished else String(_definition.coach)
 	_draw_multiline(text, Vector2(130, 663), 18, Color("#302439"), 218)
 
 
@@ -587,28 +587,28 @@ func _draw_result() -> void:
 	var rect := Rect2(18, 610, 354, 137)
 	_surface(rect, Color("#292539"), Color("#5e5269"), 20, 5)
 	_draw_portrait(Vector2(70, 680), false)
-	var heading := "GOOD!"
-	var body := "The flicker is gone. Nice work!"
+	var heading := "いいぞ！"
+	var body := "点滅が消えた。よくやった！"
 	var color := GREEN
 	if model.stage_index == 3:
-		heading = "INSPECTION: OK"
-		body = "The crossed wires stay inside. Safe!"
+		heading = "検査合格"
+		body = "この床は漏電なし。安全だ！"
 	elif model.stage_index == 4:
-		heading = "POWER LEAK"
-		body = "Red reaches the other side!"
+		heading = "漏電あり"
+		body = "赤い配線が床を\n横断している。"
 		color = RED
 	elif _definition.id == "boundary_single":
-		body = "One edge flicker cleared!"
+		body = "端の床の点滅が1つ消えた！"
 	elif _definition.id == "graduation_3x3":
-		heading = "GRADUATION: PASSED"
-		body = "Practice floor is safe!"
+		heading = "卒業検査合格"
+		body = "練習の床は安全だ！"
 	if not safe:
-		heading = "POWER LEAK"
+		heading = "漏電あり"
 		color = RED
-		body = "Red reaches the other side!" if model.inspection.red_crossing else "Blue reaches the other side!"
+		body = "赤い配線が床を\n横断している。" if model.inspection.red_crossing else "青い配線が床を\n横断している。"
 		if model.inspection.red_crossing and model.inspection.blue_crossing:
-			body = "Both wires reach the other side!"
-	_draw_text("FLOOR REPORT", Vector2(126, 636), 10, Color("#b6a6be"), true)
+			body = "赤も青も床を\n横断している。"
+	_draw_text("床の検査結果", Vector2(126, 636), 10, Color("#b6a6be"), true)
 	_draw_text(heading, Vector2(126, 661), 18, color, true)
 	_draw_multiline(body, Vector2(126, 689), 17, PAPER, 224)
 
@@ -703,7 +703,7 @@ func _publish_semantics() -> void:
 		return
 	_last_state_json = state_json
 	if OS.has_feature("web"):
-		JavaScriptBridge.eval("window.discoBreakerState = %s; document.documentElement.dataset.tutorialStage = String(window.discoBreakerState.stage); document.documentElement.dataset.screen = window.discoBreakerState.screen; document.title = window.discoBreakerState.screen === 'title' ? 'DISCO BREAKER' : 'DISCO BREAKER · ' + window.discoBreakerState.stage_id;" % state_json)
+		JavaScriptBridge.eval("window.discoBreakerState = %s; document.documentElement.dataset.tutorialStage = String(window.discoBreakerState.stage); document.documentElement.dataset.screen = window.discoBreakerState.screen; document.title = window.discoBreakerState.screen === 'title' ? 'DISCO BREAKER' : 'DISCO BREAKER · ' + %s;" % [state_json, JSON.stringify(String(_definition.title))])
 
 
 func _surface(rect: Rect2, base: Color, edge: Color, radius: int, depth: float) -> void:
@@ -730,18 +730,18 @@ func _draw_portrait(center: Vector2, light: bool) -> void:
 
 func _draw_board_caption() -> void:
 	var safe := model.result_visible and _result_safe()
-	var caption := "TAP A SOCKET TO CHANGE THE WIRE"
+	var caption := "丸い接続口をタップすると配線が変わる。"
 	if model.dialogue_visible:
-		caption = "LIGHTS OUT. MUSIC ON."
+		caption = "点滅を止めて、音楽を楽しもう。"
 	elif model.result_visible:
-		caption = "BEAUTIFULLY CONNECTED" if safe else "DARK DOESN'T ALWAYS MEAN SAFE"
+		caption = "配線よし。安全確認！" if safe else "暗くても安全とは限らない。"
 	elif model.can_call_foreman():
-		caption = "LIGHTS OUT. READY FOR INSPECTION."
+		caption = "全部消えた。親方に検査してもらおう。"
 	_draw_text(caption, Vector2(195 - _text_width(caption, 10, true) * 0.5, 506), 10, Color("#c7b5d0"), true)
 	if _leaks.active:
-		_draw_text("DASHED: ORIGINAL FAULT    SOLID: YOUR WIRE", Vector2(42, 533), 11, PAPER, true)
-		_draw_text("Same color twice = 0. The remaining path leaks.", Vector2(40, 554), 11, Color("#c7b5d0"))
-		_draw_text("Tutorial reveal. Checks alone cannot show the original.", Vector2(33, 575), 10, MUTED)
+		_draw_text("破線は元の故障、実線は自分の配線", Vector2(42, 533), 11, PAPER, true)
+		_draw_text("同じ色が重なると0。残った配線が横断し、漏電。", Vector2(40, 554), 11, Color("#c7b5d0"))
+		_draw_text("練習用の答え表示。床の点滅だけでは元の故障は分からない。", Vector2(33, 575), 10, MUTED)
 		return
 	# A compact physical wire legend makes the tap cycle visible during play.
 	for index in 4:
@@ -808,7 +808,7 @@ func _draw_mute_toggle() -> void:
 		draw_line(center + Vector2(-8, -8), center + Vector2(8, 8), Color("#f1b4c3"), 2, true)
 	else:
 		draw_arc(center + Vector2(1, 0), 8, -0.8, 0.8, 10, Color("#cfc0d8"), 1.5, true)
-	_draw_text("OFF" if _muted else "ON", _mute_rect.position + Vector2(39, 27), 11, PAPER, true)
+	_draw_text("切" if _muted else "入", _mute_rect.position + Vector2(39, 27), 11, PAPER, true)
 
 
 func _toggle_mute() -> void:

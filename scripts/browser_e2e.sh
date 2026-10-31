@@ -137,6 +137,18 @@ assert_state "window.discoBreakerState.can_call_foreman"
 capture_state 14 stage4-inspection-ready
 cycle_grid_3x3 stage4
 assert_state "window.discoBreakerState.can_call_foreman"
+click_canvas 195 214 stage4-leak-top-red
+click_canvas 195 309 stage4-leak-center-blue 3
+click_canvas 195 404 stage4-leak-bottom-red
+click_canvas 195 793 stage4-call-unsafe
+assert_state "window.discoBreakerState.floor_dark && !window.discoBreakerState.inspection.safe"
+capture_state 14a stage4-failed-inspection
+click_canvas 195 793 stage4-retry
+assert_state "!window.discoBreakerState.result_visible && window.discoBreakerState.stage === 4"
+capture_state 14b stage4-retry
+click_canvas 195 214 stage4-undo-top 3
+click_canvas 195 309 stage4-undo-center
+click_canvas 195 404 stage4-undo-bottom 3
 click_canvas 195 793 stage4-call-foreman
 assert_state "window.discoBreakerState.inspection.safe"
 capture_state 15 stage4-inspection-passed
@@ -239,7 +251,7 @@ capture_state 26 optional-graduation-skipped
 click_canvas 195 793 optional-skip-run-replay
 assert_state "window.discoBreakerState.stage_id === 'red_one_tap' && !window.discoBreakerState.finished"
 
-jq -e -s 'length == 35 and all(.viewport.width == 390 and .viewport.height == 844)' "$inventory_file" >/dev/null
+jq -e -s 'length == 37 and all(.viewport.width == 390 and .viewport.height == 844)' "$inventory_file" >/dev/null
 jq -e -s 'any(.[]; .action == "stage7-disabled-call") and any(.[]; .action == "stage7-skip-optional") and any(.[]; .action == "graduation-run-replay") and any(.[]; .action == "optional-skip-run-replay")' "$action_file" >/dev/null
 montage_inputs=()
 for index in "${!captures[@]}"; do
@@ -249,4 +261,4 @@ done
 magick montage "${montage_inputs[@]}" -thumbnail 195x422 -tile 4x -geometry +8+24 -background '#120a24' -fill '#f7f1e3' -pointsize 14 artifacts/tutorial-audit-contact-sheet.png
 
 chrome-devtools-axi console --type error >artifacts/browser-console.txt
-printf 'PASS: browser audited 35 tutorial states and every connection box\n'
+printf 'PASS: browser audited 37 tutorial states and every connection box\n'

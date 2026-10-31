@@ -2,25 +2,22 @@ class_name TextLayout
 extends RefCounted
 
 
-## Greedy word wrapping for canvas-drawn copy. Explicit newlines remain hard
-## breaks; every returned line is guaranteed to fit unless one word alone is
-## wider than the requested column.
+## Use Godot's Unicode line breaking for Japanese and space-separated words.
+## Explicit newlines remain hard breaks; adaptive wrapping also handles a
+## single word wider than the column.
 static func wrap_lines(font: Font, text: String, font_size: int, width: float) -> PackedStringArray:
 	var result := PackedStringArray()
 	for paragraph in text.split("\n", true):
-		var words := paragraph.split(" ", false)
-		if words.is_empty():
+		if paragraph.is_empty():
 			result.append("")
 			continue
-		var line := ""
-		for word in words:
-			var candidate := String(word) if line.is_empty() else line + " " + String(word)
-			if line.is_empty() or _width(font, candidate, font_size) <= width:
-				line = candidate
-			else:
-				result.append(line)
-				line = String(word)
-		result.append(line)
+		var layout := TextParagraph.new()
+		layout.width = width
+		layout.break_flags = TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE
+		layout.add_string(paragraph, font, font_size, "ja")
+		for index in layout.get_line_count():
+			var span := layout.get_line_range(index)
+			result.append(paragraph.substr(span.x, span.y - span.x).strip_edges())
 	return result
 
 

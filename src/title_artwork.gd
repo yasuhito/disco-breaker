@@ -31,18 +31,18 @@ func draw(view, elapsed: float, reduced: bool, started: bool, finished: bool) ->
 	var time := 0.0 if reduced else elapsed
 	_lighting(view, time)
 	_ball(view, time)
-	view._draw_text("LIGHT-UP FLOOR REPAIR", Vector2(114, 234), 11, Color("#adced8"), true)
+	view._draw_text("光る床の修理", Vector2(195 - view._text_width("光る床の修理", 11, true) * 0.5, 234), 11, Color("#adced8"), true)
 	view.draw_texture_rect(LOGO, Rect2(0, 250, 390, 146), false)
 	_floor(view, time, reduced)
 	_floor_reflections(view, time)
 	view._surface(REPAIR_RECT, Color("#282331"), Color("#544653"), 16, 4)
-	view._draw_text("REPAIR THE FLOOR", Vector2(113, 675), 16, Color("#a799ac"), true)
-	view._draw_text("COMING SOON", Vector2(155, 698), 10, Color("#b9a68c"), true)
+	view._draw_text("床を修理する", Vector2(195 - view._text_width("床を修理する", 16, true) * 0.5, 675), 16, Color("#a799ac"), true)
+	view._draw_text("準備中", Vector2(195 - view._text_width("準備中", 10, true) * 0.5, 698), 10, Color("#b9a68c"), true)
 	# This disabled preview cannot launch a nonexistent campaign.
-	view._draw_text("For now, learn to repair in the tutorial.", Vector2(90, 734), 12, Color("#baabc6"))
-	var label := "REPLAY TUTORIAL" if finished else ("CONTINUE TUTORIAL" if started else "TUTORIAL")
+	view._draw_text("まずは練習で直し方を覚えよう。", Vector2(195 - view._text_width("まずは練習で直し方を覚えよう。", 12, false) * 0.5, 734), 12, Color("#baabc6"))
+	var label := "もう一度練習する" if finished else ("練習の続きから" if started else "練習を始める")
 	view._draw_button(TUTORIAL_RECT, label, view.PINK, true)
-	view._draw_text("7 SHORT LESSONS  /  NO TIMER", Vector2(116, 830), 10, Color("#a89ab7"), true)
+	view._draw_text("全7レッスン　時間制限なし", Vector2(195 - view._text_width("全7レッスン　時間制限なし", 10, true) * 0.5, 830), 10, Color("#a89ab7"), true)
 
 
 func _lighting(view, time: float) -> void:

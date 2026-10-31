@@ -123,7 +123,7 @@ func _test_semantic_contract() -> void:
 
 
 func _test_foreman_copy_wraps() -> void:
-	var font := preload("res://assets/fonts/Roboto-Regular.ttf")
+	var font := preload("res://assets/fonts/NotoSansJP-Regular.otf")
 	var model := Tutorial.new()
 	var copy: Array[String] = []
 	var coach_copy: Array[String] = []
@@ -134,14 +134,16 @@ func _test_foreman_copy_wraps() -> void:
 	model.boundary_phase = 1
 	coach_copy.append(String(model.stages()[5].coach))
 	copy.append(String(model.stages()[5].coach))
-	copy.append("One edge flicker cleared!")
-	coach_copy.append("All seven lessons done!\nYou're ready to dance.")
+	copy.append("端の床の点滅が1つ消えた！")
+	coach_copy.append("全7レッスン修了！\nこれで踊る準備は万全だ。")
 	copy.append_array([
-		"All seven lessons done!\nYou're ready to dance.",
-		"The flicker is gone. Nice work!",
-		"The crossed wires stay inside. Safe!",
-		"Red reaches the other side!",
-		"Practice floor is safe!",
+		"全7レッスン修了！\nこれで踊る準備は万全だ。",
+		"点滅が消えた。よくやった！",
+		"この床は漏電なし。安全だ！",
+		"赤い配線が床を\n横断している。",
+		"練習の床は安全だ！",
+		"青い配線が床を\n横断している。",
+		"赤も青も床を\n横断している。",
 	])
 	for text in copy:
 		var font_size := 18 if text in coach_copy else 17
@@ -149,6 +151,21 @@ func _test_foreman_copy_wraps() -> void:
 		var lines := CopyLayout.wrap_lines(font, text, font_size, width)
 		_expect(CopyLayout.fits(font, lines, font_size, width), "foreman copy exceeds its text column: %s" % text)
 		_expect(lines.size() <= 3, "foreman copy exceeds three visible lines: %s" % text)
+
+	for text in copy:
+		for character in text:
+			if character != "\n":
+				_expect(font.has_char(character.unicode_at(0)), "bundled font lacks glyph: %s" % character)
+	var japanese := "日本語の長い説明も句読点を含めて折り返せる。"
+	var wrapped := CopyLayout.wrap_lines(font, japanese, 18, 120)
+	_expect(wrapped.size() > 1 and CopyLayout.fits(font, wrapped, 18, 120), "Japanese wraps without spaces")
+	_expect("".join(wrapped) == japanese, "wrapping preserves Japanese copy")
+	# Cover every Japanese character in visible copy, including title/navigation,
+	# captions and both failure families, without maintaining a glyph whitelist.
+	for path in ["res://src/tutorial_state.gd", "res://src/tutorial_view.gd", "res://src/title_artwork.gd"]:
+		for character in FileAccess.get_file_as_string(path):
+			if character.unicode_at(0) >= 0x3000:
+				_expect(font.has_char(character.unicode_at(0)), "bundled font lacks UI glyph: %s" % character)
 
 
 func _expect(condition: bool, message: String) -> void:

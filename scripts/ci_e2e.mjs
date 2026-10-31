@@ -114,6 +114,18 @@ try {
   await clickCanvas(195, 793);
   await assertState("state.can_call_foreman", "stage4 allows calling the foreman before touching the grid");
   await cycleGrid3x3("stage4");
+  await clickCanvas(195, 214);
+  await clickCanvas(195, 309, 3);
+  await clickCanvas(195, 404);
+  await clickCanvas(195, 793);
+  await assertState("state.floor_dark && !state.inspection.safe", "dark floor may fail inspection");
+  await captureState("stage4-failed-inspection");
+  await clickCanvas(195, 793);
+  await assertState("!state.result_visible && state.stage === 4", "retry keeps the current floor editable");
+  await captureState("stage4-retry");
+  await clickCanvas(195, 214, 3);
+  await clickCanvas(195, 309);
+  await clickCanvas(195, 404, 3);
   await clickCanvas(195, 793);
   await assertState("state.inspection.safe", "stage4 inspection passes");
   await captureState("stage4-inspection-passed");
@@ -126,7 +138,7 @@ try {
     "stage5 crossing trap fails on the red family only",
   );
   const leak = await page.evaluate(() => window.discoBreakerFeedback);
-  if (!leak.leak_active || leak.leak_events !== 1 || leak.leak_sound_starts !== 1 || JSON.stringify(leak.leak_routes[0].qubits) !== '[1,4,7]' || leak.revealed_hidden['4'] !== 1) throw new Error('trap must reveal the original center X and its real residual route once');
+  if (!leak.leak_active || leak.leak_events !== 2 || leak.leak_sound_starts !== 2 || JSON.stringify(leak.leak_routes[0].qubits) !== '[1,4,7]' || leak.revealed_hidden['4'] !== 1) throw new Error('trap must reveal the original center X and its real residual route once');
   await captureState("stage5-failure-witness");
   await clickCanvas(195, 793);
 

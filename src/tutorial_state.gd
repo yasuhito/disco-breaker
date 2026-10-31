@@ -27,40 +27,40 @@ func _init() -> void:
 func stages() -> Array[Dictionary]:
 	var definitions: Array[Dictionary] = [
 		{
-			"id": "red_one_tap", "title": "RED: ONE TAP", "size": 3,
-			"coach": "Tap the middle box once.\nMake a red wire!",
+			"id": "red_one_tap", "title": "赤は1回", "size": 3,
+			"coach": "中央を1回タップ。\n赤い配線にしよう！",
 			"hidden": {4: RED}, "preset": {}, "target": 4,
 		},
 		{
-			"id": "blue_two_taps", "title": "BLUE: TWO TAPS", "size": 3,
-			"coach": "Tap the middle box twice.\nRed changes to blue.",
+			"id": "blue_two_taps", "title": "青は2回", "size": 3,
+			"coach": "中央を2回タップ。\n赤から青に変わるよ。",
 			"hidden": {4: BLUE}, "preset": {}, "target": 4,
 		},
 		{
-			"id": "combined_three_taps", "title": "BOTH: THREE TAPS", "size": 3,
-			"coach": "Tap the middle box 3 times.\nMake both wires cross!",
+			"id": "combined_three_taps", "title": "赤と青は3回", "size": 3,
+			"coach": "中央を3回タップ。\n赤と青を交差させよう！",
 			"hidden": {4: BOTH}, "preset": {}, "target": 4,
 		},
 		{
-			"id": "foreman_inspection", "title": "CALL FOR INSPECTION", "size": 3,
-			"coach": "All dark is not always safe.\nCall me to inspect it.",
+			"id": "foreman_inspection", "title": "親方の検査", "size": 3,
+			"coach": "全部消えても安全とは\n限らない。親方を呼んで\n検査してもらおう。",
 			"hidden": {4: BOTH}, "preset": {4: BOTH}, "target": -1,
 		},
 		{
-			"id": "crossing_trap", "title": "THE CROSSING TRAP", "size": 3,
-			"coach": "Dark floors can still leak.\nLet's inspect this one.",
+			"id": "crossing_trap", "title": "見えない漏電", "size": 3,
+			"coach": "暗い床でも漏電する。\nこの床を検査しよう。",
 			"hidden": {4: RED}, "preset": {1: RED, 7: RED}, "target": -1,
 		},
 		{
-			"id": "boundary_single", "title": "EDGE: RED" if boundary_phase == 0 else "EDGE: BLUE", "size": 3,
-			"coach": "Inside flips two.\nEdges can flip one.\nTop-left: tap once." if boundary_phase == 0 else "Now the blue edge.\nTop-right: tap twice.\nRed changes to blue.",
+			"id": "boundary_single", "title": "端の赤" if boundary_phase == 0 else "端の青", "size": 3,
+			"coach": "内側は2枚が切り替わる。\n端なら1枚だけのことも。\n左上を1回タップ。" if boundary_phase == 0 else "次は端の青い床。\n右上を2回タップ。\n赤から青に変わるよ。",
 			"hidden": {0: RED} if boundary_phase == 0 else {2: BLUE},
 			"preset": {}, "target": 0 if boundary_phase == 0 else 2,
 			"hint_taps": 1 if boundary_phase == 0 else 2,
 		},
 		{
-			"id": "graduation_3x3", "title": "OPTIONAL 3 × 3", "size": 3,
-			"coach": "One small practice floor.\nStop red and blue flickers!",
+			"id": "graduation_3x3", "title": "自由練習 3 × 3", "size": 3,
+			"coach": "小さな床で練習しよう。\n赤と青の点滅を止めよう！",
 			"hidden": {4: RED, 2: BLUE}, "preset": {}, "target": -1,
 		},
 	]
