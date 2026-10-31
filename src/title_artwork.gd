@@ -39,7 +39,7 @@ func draw(view, elapsed: float, reduced: bool, _started: bool, _finished: bool) 
 	view._draw_text("スタート", Vector2(195 - view._text_width("スタート", 16, true) * 0.5, 675), 16, Color("#a799ac"), true)
 	view._draw_text("準備中", Vector2(195 - view._text_width("準備中", 10, true) * 0.5, 698), 10, Color("#b9a68c"), true)
 	# This disabled preview cannot launch a nonexistent campaign.
-	view._draw_button(TUTORIAL_RECT, "チュートリアル", view.PINK, true)
+	view._draw_button(TUTORIAL_RECT, "チュートリアル", view.PINK, true, false)
 
 
 func _lighting(view, time: float) -> void:

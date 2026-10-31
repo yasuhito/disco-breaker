@@ -31,6 +31,13 @@ async function captureTitle(page, phase) {
   assert.equal(before.campaign_available, false);
   await tap(page,195,675);
   assert.deepEqual(await state(page), before, `${phase}: Start remains disabled`);
+  // Both patches are inside the flat cap, away from the centered label.
+  // Only a trailing chevron would distinguish the right patch.
+  assert.deepEqual(
+    await page.screenshot({clip:{x:336,y:768,width:12,height:14}}),
+    await page.screenshot({clip:{x:316,y:768,width:12,height:14}}),
+    `${phase}: title tutorial has no trailing chevron`,
+  );
   const button = await page.screenshot({clip:{x:24,y:744,width:342,height:62}});
   if (tutorialButton) assert.deepEqual(button, tutorialButton, `${phase}: tutorial label stays unchanged`);
   else tutorialButton = button;
@@ -40,6 +47,22 @@ async function captureTitle(page, phase) {
   await page.screenshot({path:`${out}/title-${phase}-1440x900.png`});
   await page.setViewportSize({width:390,height:844});
   await page.waitForTimeout(110);
+}
+async function captureAudioToggle(page, screen) {
+  assert.equal((await feedback(page)).muted, false);
+  for (const muted of [false, true]) {
+    if (muted) await tap(page,325,36);
+    assert.equal((await feedback(page)).muted, muted);
+    for (const [width,height] of [[390,844],[1440,900]]) {
+      await page.setViewportSize({width,height});
+      await page.waitForTimeout(110);
+      await page.screenshot({path:`${out}/${screen}-audio-${muted ? 'off' : 'on'}-${width}x${height}.png`});
+    }
+    await page.setViewportSize({width:390,height:844});
+    await page.waitForTimeout(110);
+  }
+  await tap(page,325,36);
+  assert.equal((await feedback(page)).muted, false);
 }
 try {
   const page = await create();
@@ -64,6 +87,12 @@ try {
   await tap(page,195,793,35);
   assert.equal((await state(page)).dialogue_visible, true);
   await page.waitForTimeout(300);
+  assert.notDeepEqual(
+    await page.screenshot({clip:{x:342,y:786,width:12,height:14}}),
+    await page.screenshot({clip:{x:322,y:786,width:12,height:14}}),
+    'tutorial dialogue button retains its trailing chevron',
+  );
+  await page.screenshot({path:`${out}/tutorial-dialogue-chevron-390x844.png`});
   await tap(page,195,793);
   await tap(page,100,214);
   const playing = await state(page);
@@ -145,7 +174,9 @@ try {
   assert.deepEqual(await quiet.screenshot(),still,'reduced-motion title is static');
   assert.equal((await feedback(quiet)).reduced_motion,true);
   assert.equal((await feedback(quiet)).lamp_sound_starts,0);
+  await captureAudioToggle(quiet, 'title');
   await tap(quiet,195,775,350);
+  await captureAudioToggle(quiet, 'tutorial');
   await tap(quiet,195,793);
   await quiet.waitForTimeout(700);
   assert.equal((await feedback(quiet)).lamp_sound_starts,0);

@@ -617,7 +617,7 @@ func _result_safe() -> bool:
 	return not model.inspection.is_empty() and bool(model.inspection.get("safe", false))
 
 
-func _draw_button(rect: Rect2, label: String, color: Color, enabled: bool) -> void:
+func _draw_button(rect: Rect2, label: String, color: Color, enabled: bool, trailing_chevron: bool = true) -> void:
 	var secondary := rect.size.y < 45
 	var base := Color("#3b3449") if not enabled else Color("#e8c38e")
 	if color == GREEN:
@@ -635,7 +635,7 @@ func _draw_button(rect: Rect2, label: String, color: Color, enabled: bool) -> vo
 	var font_size := 16 if not secondary else 12
 	var width := _text_width(label, font_size, true)
 	_draw_text(label, Vector2(cap.get_center().x - width * 0.5, cap.position.y + cap.size.y * 0.5 + 6), font_size, text_color, true)
-	if enabled:
+	if enabled and trailing_chevron:
 		var arrow := cap.position + Vector2(cap.size.x - 24, cap.size.y * 0.5)
 		draw_polyline(PackedVector2Array([arrow + Vector2(-3, -4), arrow + Vector2(1, 0), arrow + Vector2(-3, 4)]), Color(text_color, 0.5), 2, true)
 
@@ -807,8 +807,9 @@ func _draw_mute_toggle() -> void:
 	if _muted:
 		draw_line(center + Vector2(-8, -8), center + Vector2(8, 8), Color("#f1b4c3"), 2, true)
 	else:
-		draw_arc(center + Vector2(1, 0), 8, -0.8, 0.8, 10, Color("#cfc0d8"), 1.5, true)
-	_draw_text("切" if _muted else "入", _mute_rect.position + Vector2(39, 27), 11, PAPER, true)
+		for radius in [5.0, 9.0, 13.0]:
+			draw_arc(center + Vector2(1, 0), radius, -0.8, 0.8, 10, Color("#cfc0d8"), 1.5, true)
+	_draw_text("OFF" if _muted else "ON", _mute_rect.position + Vector2(39, 27), 11, PAPER, true)
 
 
 func _toggle_mute() -> void:

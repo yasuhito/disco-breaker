@@ -21,7 +21,12 @@ func _run() -> void:
 	view._handle_design_tap(Vector2(195, 309))
 	_expect(view.semantic_state() == initial, "disabled repair and decorative floor cannot change tutorial")
 	_expect(not view.inject_action({"type": "confirm"}), "hidden tutorial cannot accept injected input")
-	view._handle_design_tap(Vector2(195, 775))
+	view._handle_design_tap(Vector2(23, 775))
+	view._handle_design_tap(Vector2(366, 775))
+	view._handle_design_tap(Vector2(195, 743))
+	view._handle_design_tap(Vector2(195, 806))
+	_expect(view.semantic_state() == initial, "outside tutorial button keeps original hit bounds")
+	view._handle_design_tap(Vector2(24, 744))
 	view._handle_design_tap(Vector2(195, 793))
 	_expect(not view.at_title and view.model.dialogue_visible, "double entry cannot dismiss lesson dialogue")
 	view._navigation_guard_until = 0
