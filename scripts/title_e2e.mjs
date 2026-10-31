@@ -24,9 +24,27 @@ async function tap(page, x, y, wait = 110) {
 }
 const state = p => p.evaluate(() => window.discoBreakerState);
 const feedback = p => p.evaluate(() => window.discoBreakerFeedback);
+let tutorialButton;
+async function captureTitle(page, phase) {
+  const before = await state(page);
+  assert.equal(before.screen, 'title');
+  assert.equal(before.campaign_available, false);
+  await tap(page,195,675);
+  assert.deepEqual(await state(page), before, `${phase}: Start remains disabled`);
+  const button = await page.screenshot({clip:{x:24,y:744,width:342,height:62}});
+  if (tutorialButton) assert.deepEqual(button, tutorialButton, `${phase}: tutorial label stays unchanged`);
+  else tutorialButton = button;
+  await page.screenshot({path:`${out}/title-${phase}-390x844.png`});
+  await page.setViewportSize({width:1440,height:900});
+  await page.waitForTimeout(110);
+  await page.screenshot({path:`${out}/title-${phase}-1440x900.png`});
+  await page.setViewportSize({width:390,height:844});
+  await page.waitForTimeout(110);
+}
 try {
   const page = await create();
   const launch = await state(page);
+  await captureTitle(page, 'initial');
   assert.equal(launch.campaign_available, false);
   await tap(page,195,675); // unavailable campaign
   await tap(page,195,500); // decorative floor
@@ -53,6 +71,7 @@ try {
   const home = await state(page);
   assert.equal(home.screen,'title');
   assert.deepEqual(home.corrections, playing.corrections);
+  await captureTitle(page, 'resume');
   const count = (await feedback(page)).lamp_sound_starts;
   await page.waitForTimeout(700);
   assert.equal((await feedback(page)).lamp_sound_starts,count,'no tutorial lamp sound on title');
@@ -100,6 +119,7 @@ try {
   assert.equal((await state(page)).finished,true);
   await tap(page,195,575,350); // explicit Back to title
   assert.equal((await state(page)).screen,'title');
+  await captureTitle(page, 'completed');
   await page.screenshot({path:`${out}/title-after-completion.png`});
   await tap(page,195,775,350); // replay
   assert.equal((await state(page)).stage,1);

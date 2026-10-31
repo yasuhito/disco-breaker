@@ -43,7 +43,7 @@ Set `DISCO_BREAKER_REDUCED_MOTION=1` for deterministic native captures without a
 
 ## Scope
 
-This is a title-and-tutorial vertical slice. 「床を修理する」 is visibly unavailable (「準備中」); 「練習を始める」 is the playable entry. There is no campaign implementation and no code or art copied from SyndromeOut. `docs/architecture.md` documents the three narrow interfaces and the stable semantic-state boundary that keep it that way.
+This is a title-and-tutorial vertical slice. 「スタート」 is visibly unavailable (「準備中」); 「チュートリアル」 is the playable entry. There is no campaign implementation and no code or art copied from SyndromeOut. `docs/architecture.md` documents the three narrow interfaces and the stable semantic-state boundary that keep it that way.
 
 ## Code seams
 
@@ -62,6 +62,6 @@ The UI uses a tactile disco lighting-console direction. Japanese copy uses bundl
 
 The title borrows the mirror ball, metallic wordmark, perspective floor and two-entry composition from the [archived original mock](docs/design/firstmate-2026-09-17/README.md). Its artwork is independently drawn in Godot with the current glass/console palette and bundled OFL font. The title floor is decorative, not a playable check lattice. No dependencies or remote asset requests are added.
 
-Choose 「練習を始める」 to begin. The home button in the upper left returns to the title, preserving the current tutorial floor for 「練習の続きから」. The completion screen offers 「もう一度」 and 「タイトルへ」; replay starts all seven lessons again. Mute is shared and persists, and reduced motion freezes title rotation, light beams and floor flicker. The title is silent. Campaign entry remains disabled until a playable campaign exists.
+Choose 「チュートリアル」 to begin. The home button in the upper left returns to the title, preserving the current tutorial floor. The title's 「チュートリアル」 button resumes that floor, or restarts all seven lessons after completion. The completion screen offers 「もう一度」 and 「タイトルへ」; replay starts all seven lessons again. Mute is shared and persists, and reduced motion freezes title rotation, light beams and floor flicker. The title is silent. Campaign entry remains disabled until a playable campaign exists.
 
 `node scripts/ci_e2e.mjs` includes the title/navigation browser regressions in `scripts/title_e2e.mjs`. Future ideas, explicitly separate from implemented features, are recorded in [the roadmap](docs/roadmap.md).
