@@ -17,7 +17,11 @@ func _run() -> void:
 	await process_frame
 	var initial: Dictionary = view.semantic_state()
 	_expect(initial.screen == "title" and not initial.campaign_available, "launch shows title, not campaign")
-	_expect(view._mute_rect == View.Title.MUTE_RECT, "title audio art covers the shared audio hit area")
+	var was_muted: bool = view._muted
+	view._handle_design_tap(Vector2(View.Title.MUTE_RECT.end.x - 2, View.Title.MUTE_RECT.get_center().y))
+	_expect(view._muted != was_muted, "the whole drawn title audio plate toggles sound")
+	view._handle_design_tap(view._mute_rect.get_center())
+	_expect(view._muted == was_muted, "the shared audio hit area still toggles sound on the title")
 	view._handle_design_tap(Vector2(195, 675))
 	view._handle_design_tap(Vector2(195, 309))
 	_expect(view.semantic_state() == initial, "disabled repair and decorative floor cannot change tutorial")

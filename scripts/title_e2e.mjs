@@ -75,13 +75,13 @@ try {
   assert.equal((await feedback(page)).sound_starts, 0);
   assert.equal((await feedback(page)).lamp_sound_starts, 0);
   await page.screenshot({ path: `${out}/title-reflections-a.png` });
-  // Mirror beams leave the ball's underside above the floor.
-  const beamsA = await page.screenshot({clip:{x:96,y:344,width:198,height:80}});
-  const floorA = await page.screenshot({clip:{x:24,y:435,width:342,height:186}});
+  // The turning mirror ball and the rays leaving its facets. (In the approved
+  // layout no ray reaches the floor, whose lamps flicker on their own
+  // schedule; tests/title_geometry.gd checks that deterministically.)
+  const mirrorA = await page.screenshot({clip:{x:0,y:0,width:390,height:180}});
   await page.waitForTimeout(1700);
   await page.screenshot({ path: `${out}/title-reflections-b.png` });
-  assert.notDeepEqual(await page.screenshot({clip:{x:96,y:344,width:198,height:80}}), beamsA, 'mirror beams move');
-  assert.notDeepEqual(await page.screenshot({clip:{x:24,y:435,width:342,height:186}}), floorA, 'glass lighting moves');
+  assert.notDeepEqual(await page.screenshot({clip:{x:0,y:0,width:390,height:180}}), mirrorA, 'mirror ball and rays move');
   assert.deepEqual(await state(page), launch, 'animation cannot change gameplay');
   // Entry and the lesson OK overlap; a rapid second click must not skip copy.
   await tap(page,195,775,35);

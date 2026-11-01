@@ -1,10 +1,11 @@
 class_name TitleArtwork
 extends RefCounted
 
-# Original title art in the flat 45-degree vector grammar: every non-text edge
-# is horizontal, vertical or diagonal. Static surfaces become one mesh with a
-# one-device-pixel antialiasing fringe. Mirror beams are single textured quads
-# whose filtered cross-section keeps 45-degree edges smooth at any scale.
+# Original title art in the flat 45-degree vector grammar. The layout follows
+# the approved title mock (390 x 844 design px = 2 x its 195 x 422 units).
+# Every non-text edge is horizontal, vertical or diagonal. Static surfaces are
+# meshes with a one-device-pixel antialiasing fringe; mirror rays are single
+# textured quads whose filtered cross-section stays smooth at any scale.
 const Flicker := preload("res://src/fault_flicker.gd")
 
 const INK := Color("#0d0a17")
@@ -31,30 +32,37 @@ const PINK_HI := Color("#ffd0e4")
 const PINK := Color("#f08fbd")
 const PINK_LO := Color("#a9487a")
 
+# Hit areas keep their original bounds; the plates are drawn where the mock
+# puts them. The title's audio hit area also covers its whole drawn plate.
 const TUTORIAL_RECT := Rect2(24, 744, 342, 62)
 const REPAIR_RECT := Rect2(24, 648, 342, 66)
-const MUTE_RECT := Rect2(290, 14, 76, 44)
+const TUTORIAL_PLATE := Rect2(28, 752, 332, 60)
+const REPAIR_PLATE := Rect2(28, 660, 332, 72)
+const MUTE_RECT := Rect2(294, 16, 80, 44)
+const CENTER_X := 194.0
 
-const FASCIA_BOTTOM := 224.0
-const BALL_CENTER := Vector2(195, 292)
-const BALL_HALF := 54.0
+const BALL_CENTER := Vector2(194, 108)
+const BALL_HALF := 44.0
 const BALL_CHAMFER := 26.0
-const BALL_RIM := 2.5
-const BALL_ROWS := 9
-const FACET_GAP := 0.6
-const EMITTERS := 18
+const BALL_ROWS := 11
+const SEAM := 2.0
 const PERIOD := 22.0
-# Reduced motion holds a phase where every visible beam is at full strength.
-const STILL_TIME := PERIOD / 36.0
-const BEAM_HALF := 3.25
-const BEAM_FADE := 5.0
-const FLOOR_ROW0 := 394.0
-const FLOOR_PITCH := Vector2(44, 22)
-const FLOOR_FRONT := 632.0
-const SPOT_HALF := Vector2(9, 4.5)
-const VERTICAL_LANDINGS := [440.0, 500.0, 560.0, 470.0, 530.0]
-const DIAGONAL_DROPS := [80.0, 104.0, 128.0, 152.0, 92.0]
-const LIT_TILES := [[1, 3, "blue"], [6, 2, "red"], [3, 5, "red"], [7, 6, "blue"], [1, 8, "red"], [5, 9, "blue"]]
+const BEAM_HALF := 2.75
+const STAR_POINTS := [Vector2(36, 60), Vector2(340, 104), Vector2(60, 236), Vector2(352, 280), Vector2(24, 344), Vector2(300, 44)]
+const FLOOR_ROW0 := 381.0
+const FLOOR_FRONT := 636.0
+const LIT_TILES := [[3, 2, "red"], [6, 3, "blue"], [8, 5, "red"], [4, 6, "blue"], [1, 4, "blue"], [9, 2, "red"]]
+const DISCO_TOP := Vector2(78, 188)
+const BREAKER_TOP := Vector2(30, 260)
+# Rays keep clear of the sign, the audio control, the cord and the floor.
+const OBSTACLES := [Rect2(74, 184, 248, 68), Rect2(26, 256, 344, 72), Rect2(290, 12, 88, 52), Rect2(186, 0, 16, 60), Rect2(0, 356, 390, 488)]
+const END_FADE := 0.28
+const LOGO_RECT := Rect2(16, 176, 360, 156)
+# Emitting rows and their headings (x is mirrored to the facet's side): the
+# top mirrors throw light up, the middle and lower ones sideways, and the
+# underside straight down behind the sign.
+const EMIT_ROWS := {0: Vector2(1, -1), 2: Vector2(1, -1), 4: Vector2(1, 0), 6: Vector2(1, 0), 8: Vector2(1, 0), 10: Vector2(0, 1)}
+const EMIT_EVERY := 4
 
 # 5 x 7 letter cells: F full, a/b/c/d the four 45-degree half cells.
 const GLYPH := {
@@ -70,11 +78,14 @@ const GLYPH := {
 	"K": ["F..aF", "F.aFd", "FaFd.", "FFd..", "FFb..", "FcFb.", "F.cFb"],
 }
 const CELL := 8.0
+# Reduced motion holds a phase showing up, sideways and down rays at full strength.
+const STILL_TIME := 0.9
 
+static var _hidden_span := Vector2(-1, -1)
 var _scale := 0.0
-var _static_mesh: ArrayMesh
+var _back_mesh: ArrayMesh
+var _logo_texture_cache: ImageTexture
 var _beam_texture: GradientTexture1D
-var _spot_texture: ImageTexture
 var _line_width := 0.5
 
 
@@ -102,33 +113,25 @@ static func ball_outline() -> PackedVector2Array:
 	return octagon(Rect2(BALL_CENTER - Vector2.ONE * BALL_HALF, Vector2.ONE * BALL_HALF * 2.0), BALL_CHAMFER)
 
 
-static func ball_face() -> PackedVector2Array:
-	# A uniform rim: the 45-degree chamfer shrinks by rim * (2 - sqrt 2).
-	var half := BALL_HALF - BALL_RIM
-	return octagon(Rect2(BALL_CENTER - Vector2.ONE * half, Vector2.ONE * half * 2.0), BALL_CHAMFER - BALL_RIM * (2.0 - sqrt(2.0)))
+static func _half_width(y: float) -> float:
+	return BALL_HALF - maxf(0.0, absf(y - BALL_CENTER.y) - (BALL_HALF - BALL_CHAMFER))
 
 
-static func flat_bottom_half() -> float:
-	return BALL_HALF - BALL_RIM - (BALL_CHAMFER - BALL_RIM * (2.0 - sqrt(2.0)))
-
-
+# Rows are flush with the silhouette: seams only separate neighbouring rows.
 static func row_span(row: int) -> Vector2:
-	var top := BALL_CENTER.y - BALL_HALF + BALL_RIM
-	var height := (BALL_HALF - BALL_RIM) * 2.0 / BALL_ROWS
-	return Vector2(top + row * height, top + (row + 1) * height)
+	var height := (BALL_HALF * 2.0 - SEAM * (BALL_ROWS - 1)) / BALL_ROWS
+	var top := BALL_CENTER.y - BALL_HALF + row * (height + SEAM)
+	return Vector2(top, top + height)
 
 
 static func _row_radius(row: int) -> float:
 	var span := row_span(row)
-	var offset := absf((span.x + span.y) * 0.5 - BALL_CENTER.y)
-	var flat := BALL_HALF - BALL_RIM - flat_bottom_half()
-	return BALL_HALF - BALL_RIM - maxf(0.0, offset - (BALL_HALF - BALL_RIM - flat))
+	var nearest := clampf(BALL_CENTER.y, span.x, span.y)
+	return _half_width(nearest)
 
 
 static func _row_count(row: int) -> int:
-	if row == BALL_ROWS - 1:
-		return EMITTERS
-	return maxi(6, roundi(TAU * _row_radius(row) / 11.0))
+	return maxi(8, roundi(TAU * _row_radius(row) / 8.0))
 
 
 static func _wrap(angle: float) -> float:
@@ -139,106 +142,219 @@ static func _rotation(time: float) -> float:
 	return time * TAU / PERIOD
 
 
-# Every visible mirror facet for one moment: fixed material tiles on rotating
-# latitude rows. Facets compress toward the silhouette and clip to the face.
+# Mirror tiles on rotating latitude rows. Tiles and their seams compress
+# toward the limb, so the silhouette is made of mirrors, not a frame.
 static func facets(time: float) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
-	var face := ball_face()
+	var outline := ball_outline()
 	var turn := _rotation(time)
 	for row in BALL_ROWS:
 		var count := _row_count(row)
-		var radius := _row_radius(row)
+		# Slightly past the silhouette, so the clipped edge is always mirror.
+		var radius := _row_radius(row) + 1.0
 		var step := TAU / count
 		var span := row_span(row)
 		for index in count:
-			var stagger := 0.5 * (row % 2) if row != BALL_ROWS - 1 else 0.0
-			var start := _wrap((index + stagger) * step + turn - step * 0.5)
-			var finish := start + step
+			var start := _wrap((index + 0.5 * (row % 2)) * step + turn - step * 0.5)
 			var low := maxf(start, -PI * 0.5)
-			var high := minf(finish, PI * 0.5)
+			var high := minf(start + step, PI * 0.5)
 			if high <= low:
 				continue
-			var left := BALL_CENTER.x + radius * sin(low) + FACET_GAP
-			var right := BALL_CENTER.x + radius * sin(high) - FACET_GAP
-			if right - left < 0.25:
+			# Seams thin out faster than the mirrors, so the limb stays bright.
+			var left := BALL_CENTER.x + radius * sin(low) + SEAM * 0.5 * pow(cos(low), 2)
+			var right := BALL_CENTER.x + radius * sin(high) - SEAM * 0.5 * pow(cos(high), 2)
+			if right - left < 0.2:
 				continue
-			var rect := Rect2(left, span.x + FACET_GAP, right - left, span.y - span.x - FACET_GAP * 2.0)
-			var clipped := Geometry2D.intersect_polygons(rect_points(rect), face)
+			var rect := Rect2(left, span.x, right - left, span.y - span.x)
+			var clipped := Geometry2D.intersect_polygons(rect_points(rect), outline)
 			if clipped.is_empty():
 				continue
-			result.append({"row": row, "index": index, "rect": rect, "polygon": clipped[0], "shade": cos((low + high) * 0.5)})
+			var polygon: PackedVector2Array = clipped[0]
+			# Area centroid: moves continuously as clipping adds corners.
+			var center := Vector2.ZERO
+			var area := 0.0
+			for i in range(1, polygon.size() - 1):
+				var part := absf((polygon[i] - polygon[0]).cross(polygon[i + 1] - polygon[0])) * 0.5
+				center += (polygon[0] + polygon[i] + polygon[i + 1]) / 3.0 * part
+				area += part
+			# Sub-pixel crumbs at chamfer corners are invisible and degenerate.
+			if area < 0.05:
+				continue
+			result.append({"row": row, "index": index, "key": row * 100 + index, "rect": rect, "polygon": polygon, "center": center / area, "shade": cos((low + high) * 0.5)})
 	return result
 
 
-# Beams belong to the bottom ring, whose facets slide along the octagon's flat
-# underside. Each one leaves its facet's lower edge at a fixed 90 or 45 degree
-# heading and lands on the floor; the pair translates rigidly with the facet.
-static func beams(time: float) -> Array[Dictionary]:
+static func _exit_length(origin: Vector2, direction: Vector2, polygon: PackedVector2Array) -> float:
+	var best := INF
+	for i in polygon.size():
+		var hit = Geometry2D.segment_intersects_segment(origin, origin + direction * 400.0, polygon[i], polygon[(i + 1) % polygon.size()])
+		if hit != null:
+			best = minf(best, origin.distance_to(hit))
+	return best
+
+
+static func _segment_rect_distance(a: Vector2, b: Vector2, rect: Rect2) -> float:
+	var corners := rect_points(rect)
+	if rect.has_point(a) or rect.has_point(b):
+		return 0.0
+	var best := INF
+	for i in 4:
+		var c := corners[i]
+		var d := corners[(i + 1) % 4]
+		if Geometry2D.segment_intersects_segment(a, b, c, d) != null:
+			return 0.0
+		best = minf(best, c.distance_to(Geometry2D.get_closest_point_to_segment(c, a, b)))
+	for p in [a, b]:
+		best = minf(best, p.distance_to(Vector2(clampf(p.x, rect.position.x, rect.end.x), clampf(p.y, rect.position.y, rect.end.y))))
+	return best
+
+
+# Rays leave visible facets near the silhouette, heading outward at a fixed
+# 0/45/90-degree angle chosen from the facet's position and a per-mirror tilt.
+# Headings change only at zero strength. A ray either runs clear to a scene
+# edge, fading with distance, or (straight down) ends behind the solid sign.
+static func beams(time: float, visible: Array[Dictionary] = []) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
-	var radius := _row_radius(BALL_ROWS - 1)
-	var limit := flat_bottom_half() - BEAM_HALF - 2.0
-	var origin_y := row_span(BALL_ROWS - 1).y - FACET_GAP
-	for index in EMITTERS:
-		var angle := _wrap(index * TAU / EMITTERS + _rotation(time))
-		var x := BALL_CENTER.x + radius * sin(angle)
-		var offset := absf(x - BALL_CENTER.x)
-		if cos(angle) <= 0.0 or offset > limit:
+	var outline := ball_outline()
+	var hidden := _hidden_columns()
+	for facet in (visible if not visible.is_empty() else facets(time)):
+		var row: int = facet.row
+		var index: int = facet.index
+		if not EMIT_ROWS.has(row) or posmod(index + row, EMIT_EVERY) != 0:
 			continue
-		var heading := [0, -1, 1][index % 3] as int
-		var group := int(index / 3.0) % 5
-		var origin := Vector2(x, origin_y)
-		var landing := Vector2(x, VERTICAL_LANDINGS[group])
-		if heading != 0:
-			var drop: float = DIAGONAL_DROPS[group]
-			landing = origin + Vector2(heading * drop, drop)
+		var origin: Vector2 = facet.center
+		var radial: Vector2 = origin - BALL_CENTER
+		var side := signf(radial.x)
+		var heading: Vector2 = EMIT_ROWS[row] * Vector2(side, 1)
+		if EMIT_ROWS[row] == Vector2(0, 1):
+			heading = Vector2(0, 1)
+		var direction := heading.normalized()
+		# Side-facing mirrors switch sides only at zero strength.
+		var strength := 1.0 if heading.x == 0.0 else smoothstep(3.0, 9.0, absf(radial.x))
+		strength *= smoothstep(0.2, 0.45, direction.dot(radial.normalized()))
+		var inside := _exit_length(origin, direction, outline)
+		strength *= 1.0 - smoothstep(6.0, 12.0, inside)
+		var polygon: PackedVector2Array = facet.polygon
+		var low := INF
+		var high := -INF
+		for point in polygon:
+			low = minf(low, point.x)
+			high = maxf(high, point.x)
+		strength *= smoothstep(1.0, 3.5, high - low)
+		if strength < 0.004:
+			continue
+		var finish := Vector2.ZERO
+		var behind_sign := heading == Vector2(0, 1)
+		if behind_sign:
+			# Straight down into the sign's solid top bar: the sign hides the end.
+			strength *= smoothstep(hidden.x, hidden.x + 4.0, origin.x) * (1.0 - smoothstep(hidden.y - 4.0, hidden.y, origin.x))
+			finish = Vector2(origin.x, OBSTACLES[0].position.y + 12.0)
+		else:
+			var reach := INF
+			for axis in 2:
+				if direction[axis] > 0.0:
+					reach = minf(reach, ([390.0, 844.0][axis] - origin[axis]) / direction[axis])
+				elif direction[axis] < 0.0:
+					reach = minf(reach, -origin[axis] / direction[axis])
+			finish = origin + direction * reach
+			var clearance := INF
+			for obstacle in OBSTACLES:
+				clearance = minf(clearance, _segment_rect_distance(origin, finish, obstacle))
+			strength *= smoothstep(3.0, 10.0, clearance)
+		if strength < 0.004:
+			continue
 		result.append({
-			"facet": index, "heading": heading, "origin": origin, "landing": landing,
-			"tint": [PINK_HI, BLUE_HI, GOLD_HI][(index * 2 + group) % 3],
-			"strength": 1.0 - smoothstep(limit - BEAM_FADE, limit, offset),
+			"key": facet.key, "row": row, "heading": heading, "origin": origin, "end": finish,
+			"behind_sign": behind_sign, "strength": strength,
+			"tint": [PINK_HI, BLUE_HI, GOLD_HI][posmod(index * 2 + row, 3)],
 		})
 	return result
 
 
+# Horizontal span where a straight-down ray of full width meets at least 10 px
+# of uninterrupted sign directly below the sign's top edge.
+static func _hidden_columns() -> Vector2:
+	if _hidden_span.x >= 0.0:
+		return _hidden_span
+	var pieces: Array[PackedVector2Array] = []
+	var probe := ShapeLog.new()
+	_logo_shapes(probe)
+	pieces = probe.shapes
+	var top := OBSTACLES[0].position.y
+	var solid: Array[bool] = []
+	for x in range(0, 390):
+		var covered := true
+		for y in range(int(top) + 1, int(top) + 14):
+			var hit := false
+			for piece in pieces:
+				if Geometry2D.is_point_in_polygon(Vector2(x + 0.5, y + 0.5), piece):
+					hit = true
+					break
+			if not hit:
+				covered = false
+				break
+		solid.append(covered)
+	# The widest solid run under the ball's underside.
+	var best := Vector2(-1, -1)
+	var start := -1
+	for x in range(0, 391):
+		var ok := x < 390 and solid[x]
+		if ok and start < 0:
+			start = x
+		if not ok and start >= 0:
+			var run := Vector2(start + BEAM_HALF + 1.0, x - BEAM_HALF - 1.0)
+			if run.x <= BALL_CENTER.x and run.y >= BALL_CENTER.x and run.y - run.x > best.y - best.x:
+				best = run
+			start = -1
+	_hidden_span = best
+	return best
+
+
 static func beam_polygon(beam: Dictionary) -> PackedVector2Array:
+	var heading: Vector2 = beam.heading
+	# Straight rays offset across their heading; diagonal rays keep a level
+	# cap, widened by sqrt 2 so every ray has the same perpendicular width.
+	var offset := Vector2(0, BEAM_HALF) if heading.y == 0.0 else Vector2(BEAM_HALF * (1.0 if heading.x == 0.0 else sqrt(2.0)), 0)
 	var origin: Vector2 = beam.origin
-	var landing: Vector2 = beam.landing
-	var half := Vector2(BEAM_HALF, 0)
-	return PackedVector2Array([origin - half, origin + half, landing + half, landing - half])
-
-
-static func spot_polygon(center: Vector2) -> PackedVector2Array:
-	var h := SPOT_HALF
-	return PackedVector2Array([center + Vector2(-h.x, 0), center + Vector2(-h.y, -h.y), center + Vector2(h.y, -h.y), center + Vector2(h.x, 0), center + Vector2(h.y, h.y), center + Vector2(-h.y, h.y)])
+	var finish: Vector2 = beam.end
+	return PackedVector2Array([origin - offset, origin + offset, finish + offset, finish - offset])
 
 
 static func tile_center(column: int, row: int) -> Vector2:
-	return Vector2(8 + column * FLOOR_PITCH.x + (FLOOR_PITCH.y if row % 2 else 0.0), FLOOR_ROW0 + row * FLOOR_PITCH.y)
+	return Vector2(9 + column * 44 + (22.0 if row % 2 else 0.0), FLOOR_ROW0 + row * 22)
 
 
 func draw(view, elapsed: float, reduced: bool, _started: bool, _finished: bool) -> void:
 	var time := STILL_TIME if reduced else elapsed
 	_ensure_resources(view)
-	view.draw_mesh(_static_mesh, null)
+	view.draw_mesh(_back_mesh, null)
 	_draw_lit_tiles(view, time, reduced)
-	var active := beams(time)
+	var mirrors := facets(time)
+	var active := beams(time, mirrors)
+	_draw_ball(view, mirrors, active)
 	for beam in active:
-		view.draw_texture_rect(_spot_texture, Rect2(beam.landing - SPOT_HALF, SPOT_HALF * 2.0), false, Color(beam.tint, beam.strength * 0.9))
-	_draw_ball(view, time, active)
-	for beam in active:
-		view.draw_polygon(beam_polygon(beam), PackedColorArray([Color(beam.tint, beam.strength * 0.88)]), PackedVector2Array([Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]), _beam_texture)
+		var fade := 1.0 if beam.behind_sign else END_FADE
+		var near := Color(beam.tint, beam.strength * 0.9)
+		var far := Color(beam.tint, beam.strength * 0.9 * fade)
+		view.draw_polygon(beam_polygon(beam), PackedColorArray([near, near, far, far]), PackedVector2Array([Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]), _beam_texture)
+	# The sign stands in front of the ball and its rays.
+	view.draw_texture_rect(_logo_texture_cache, LOGO_RECT, false)
 	_draw_labels(view)
 	_draw_mute(view, view._muted)
 
 
 func _ensure_resources(view) -> void:
 	var scale := device_scale(view)
-	if absf(scale - _scale) < 0.01 and _static_mesh != null:
+	if absf(scale - _scale) < 0.01 and _back_mesh != null:
 		return
 	_scale = scale
 	_line_width = 0.5 / scale
-	_static_mesh = _build_static_mesh(1.0 / scale)
+	var back := MeshBuilder.new()
+	back.fringe = 1.0 / scale
+	_background_shapes(back)
+	_back_mesh = back.build()
+	_logo_texture_cache = _logo_texture(scale)
 	_beam_texture = _build_beam_texture(scale)
-	_spot_texture = _build_spot_texture(scale)
 
 
 func _fill(view, points: PackedVector2Array, color: Color) -> void:
@@ -253,87 +369,88 @@ func _draw_lit_tiles(view, time: float, reduced: bool) -> void:
 		var center := tile_center(tile[0], tile[1])
 		var red: bool = tile[2] == "red"
 		var level := Flicker.brightness(8000 + tile[1] * 11 + tile[0] * 71, time, reduced)
-		if level >= 0.6:
-			_fill(view, diamond(center, 20.5), RED if red else BLUE)
-		elif level >= 0.2:
-			_fill(view, diamond(center, 20.5), RED_LO if red else BLUE_LO)
-		else:
-			# A dropped lamp keeps a coloured perimeter, as in the lessons.
-			_fill(view, diamond(center, 20.5), RED_DARK if red else BLUE_DARK)
-			_fill(view, diamond(center, 18.0), Color("#221a38"))
+		var color := (RED if red else BLUE) if level >= 0.6 else ((RED_LO if red else BLUE_LO) if level >= 0.2 else (RED_DARK if red else BLUE_DARK))
+		_fill(view, diamond(center, 19.0), color)
 
 
-func _draw_ball(view, time: float, active: Array[Dictionary]) -> void:
-	_fill(view, ball_outline(), INK)
-	view.draw_colored_polygon(ball_face(), Color("#211938"))
+func _draw_ball(view, mirrors: Array[Dictionary], active: Array[Dictionary]) -> void:
+	# Seams between mirrors; inset so no backing shows past the mirrors.
+	var inset := octagon(Rect2(BALL_CENTER - Vector2.ONE * (BALL_HALF - 0.6), Vector2.ONE * (BALL_HALF - 0.6) * 2.0), BALL_CHAMFER - 0.6 * (2.0 - sqrt(2.0)))
+	view.draw_colored_polygon(inset, NIGHT3)
 	var emitting := {}
 	for beam in active:
-		emitting[beam.facet] = beam
-	var light := BALL_CENTER + Vector2(-18, -27)
-	for facet in facets(time):
+		emitting[beam.key] = beam
+	var light := BALL_CENTER + Vector2(-16, -24)
+	for facet in mirrors:
 		var row: int = facet.row
 		var shade := clampf(facet.shade, 0.0, 1.0)
-		var color := NIGHT4.lerp(Color("#b9b4dc"), pow(shade, 0.8))
-		if row < 2:
-			color = NIGHT5.lerp(Color("#d7d3f0"), pow(shade, 0.8))
-		elif row > 6:
-			color = NIGHT3.lerp(NIGHT5, pow(shade, 0.8))
+		var color := NIGHT4.lerp(Color("#b9b4dc"), pow(shade, 0.7))
+		if row < 3:
+			color = NIGHT5.lerp(Color("#d7d3f0"), pow(shade, 0.7))
+		elif row > 8:
+			color = NIGHT3.lerp(NIGHT5, pow(shade, 0.7))
 		var facet_hash := posmod(int(facet.index) * 7 + row * 13, 11)
-		if row > 1 and row < 7 and (facet_hash == 4 or facet_hash == 7):
-			color = color.lerp(BLUE_HI if facet_hash == 4 else PINK_HI, 0.65 * shade)
-		# A fixed key light: facets brighten smoothly as they turn through it.
-		var rect: Rect2 = facet.rect
-		var glint := clampf(1.0 - rect.get_center().distance_to(light) / 17.0, 0.0, 1.0)
+		if facet_hash == 4:
+			color = color.lerp(BLUE_HI, 0.7 * shade)
+		elif facet_hash == 7 and row > 3:
+			color = color.lerp(PINK_HI, 0.7 * shade)
+		# A fixed key light: mirrors brighten smoothly as they turn through it.
+		var glint := clampf(1.0 - Vector2(facet.center).distance_to(light) / 15.0, 0.0, 1.0)
 		color = color.lerp(Color("#fffaf0"), glint * 0.9)
-		if row == BALL_ROWS - 1 and emitting.has(facet.index):
-			var beam: Dictionary = emitting[facet.index]
+		if emitting.has(facet.key):
+			var beam: Dictionary = emitting[facet.key]
 			color = color.lerp(Color(beam.tint).lerp(Color.WHITE, 0.45), beam.strength)
 		_fill(view, facet.polygon, color)
 
 
 func _draw_labels(view) -> void:
 	var label := "スタート"
-	var sub := "準備中"
-	view._draw_text(label, Vector2(195 - view._text_width(label, 30, true) * 0.5, 682), 30, MIST, true)
-	view._draw_text(sub, Vector2(195 - view._text_width(sub, 17) * 0.5, 704), 17, GOLD)
+	view._draw_text(label, Vector2(CENTER_X - view._text_width(label, 30, true) * 0.5, 692.4), 30, MIST, true)
+	label = "準備中"
+	view._draw_text(label, Vector2(CENTER_X - view._text_width(label, 17) * 0.5, 717.0), 17, GOLD)
 	label = "チュートリアル"
-	# Japanese glyphs centre roughly 0.38 em above the baseline.
-	var face_center := TUTORIAL_RECT.position.y + 2 + (TUTORIAL_RECT.size.y - 10) * 0.5
-	view._draw_text(label, Vector2(195 - view._text_width(label, 30, true) * 0.5, roundf(face_center + 30 * 0.38)), 30, INK, true)
+	view._draw_text(label, Vector2(CENTER_X - view._text_width(label, 30, true) * 0.5, 788.4), 30, INK, true)
+
+
+# Speaker icon extents relative to its left edge: ON waves, OFF slash.
+const SPEAKER_SPAN := {false: Vector2(0, 34.2), true: Vector2(-8.5, 22.5)}
 
 
 func _draw_mute(view, muted: bool) -> void:
 	var text := "OFF" if muted else "ON"
-	var text_color := RED_HI if muted else PAPER
-	# Horizontal extent of each icon relative to the speaker's left edge.
-	var icon := Vector2(-4.0, 15.0) if muted else Vector2(0.0, 26.0)
-	var text_width: float = view._text_width(text, 13, true)
-	var gap := 6.0
-	var face := Rect2(MUTE_RECT.position + Vector2(2, 2), Vector2(MUTE_RECT.size.x - 4, MUTE_RECT.size.y - 8))
-	# The icon and measured label are centred together inside the cap.
-	var group := icon.y - icon.x + gap + text_width
-	var sx := roundf(face.get_center().x - group * 0.5 - icon.x)
-	var cy := face.get_center().y
-	# Speaker: a body and a 45-degree cone.
-	_fill(view, rect_points(Rect2(sx, cy - 5, 5, 10)), PAPER)
-	_fill(view, PackedVector2Array([Vector2(sx + 5, cy - 5), Vector2(sx + 11, cy - 11), Vector2(sx + 11, cy + 11), Vector2(sx + 5, cy + 5)]), PAPER)
+	var span: Vector2 = SPEAKER_SPAN[muted]
+	var gap := 5.0
+	var text_width: float = view._text_width(text, 17)
+	# The icon and measured label are centred as one group on the plate.
+	var sx := MUTE_RECT.position.x + (MUTE_RECT.size.x - (span.y - span.x + gap + text_width)) * 0.5 - span.x
+	var top := MUTE_RECT.position.y + 6.0
+	_fill(view, PackedVector2Array([Vector2(sx, top + 8), Vector2(sx + 6, top + 8), Vector2(sx + 6, top + 6), Vector2(sx + 14, top - 2), Vector2(sx + 14, top + 30), Vector2(sx + 6, top + 22), Vector2(sx + 6, top + 20), Vector2(sx, top + 20)]), PAPER)
 	if muted:
-		# A single 45-degree slash through the speaker, with an ink keyline.
-		var from := Vector2(sx - 3.5, cy - 9)
-		var to := Vector2(sx + 14.5, cy + 9)
-		view.draw_line(from, to, INK, 4.5, true)
-		view.draw_line(from, to, RED_HI, 2.2, true)
+		# One 45-degree slash through the speaker, over an ink keyline.
+		for layer in [[sx - 8.5, 7.0, INK], [sx - 7.0, 4.0, RED_HI]]:
+			var x0: float = layer[0]
+			var width: float = layer[1]
+			_fill(view, PackedVector2Array([Vector2(x0, top + 2), Vector2(x0 + width, top + 2), Vector2(x0 + width + 24, top + 26), Vector2(x0 + 24, top + 26)]), layer[2])
 	else:
 		# Three angular waves: 45-degree, vertical, 45-degree brackets.
+		var cy := top + 14.0
 		for wave in 3:
-			var radius := 3.0 + wave * 3.0
-			var vertical := sx + 16.0 + wave * 4.5
-			var start := vertical - radius * 0.5
-			view.draw_polyline(PackedVector2Array([Vector2(start, cy - radius), Vector2(vertical, cy - radius * 0.5), Vector2(vertical, cy + radius * 0.5), Vector2(start, cy + radius)]), PAPER, 1.8, true)
-	view._draw_text(text, Vector2(sx + icon.y + gap, roundf(cy + 13 * 0.37)), 13, text_color, true)
+			var radius := 5.0 + wave * 4.0
+			var start := sx + 18.0 + wave * 4.0
+			view.draw_polyline(PackedVector2Array([Vector2(start, cy - radius), Vector2(start + radius * 0.5, cy - radius * 0.5), Vector2(start + radius * 0.5, cy + radius * 0.5), Vector2(start, cy + radius)]), PAPER, 2.4, true)
+	view._draw_text(text, Vector2(sx + span.y + gap, top + 4.0 + 17 * 0.88), 17, RED_HI if muted else PAPER)
 
 
-# --- static mesh -----------------------------------------------------------
+# --- static meshes ---------------------------------------------------------
+
+class ShapeLog:
+	extends RefCounted
+	var shapes: Array[PackedVector2Array] = []
+	var colors: Array[Color] = []
+
+	func convex(points: PackedVector2Array, color: Color) -> void:
+		shapes.append(points)
+		colors.append(color)
 
 class MeshBuilder:
 	extends RefCounted
@@ -351,6 +468,9 @@ class MeshBuilder:
 			return
 		for i in range(1, points.size() - 1):
 			triangle(points[0], points[i], points[i + 1], color, color, color)
+		_fringe(points, color)
+
+	func _fringe(points: PackedVector2Array, color: Color) -> void:
 		var clear := Color(color, 0.0)
 		var count := points.size()
 		var normals: Array[Vector2] = []
@@ -380,64 +500,50 @@ class MeshBuilder:
 		return mesh
 
 
-func _build_static_mesh(fringe: float) -> ArrayMesh:
-	var mesh := MeshBuilder.new()
-	mesh.fringe = fringe
-	_static_shapes(mesh)
-	return mesh.build()
-
-
-# Records every static shape. Tests replay this into a probe to audit angles.
-func _static_shapes(mesh) -> void:
-	# Ceiling fascia carrying the sign, its rail, the back wall and the floor.
-	mesh.convex(rect_points(Rect2(0, 0, 390, FASCIA_BOTTOM)), NIGHT0)
-	mesh.convex(rect_points(Rect2(0, FASCIA_BOTTOM, 390, 2)), INK)
-	mesh.convex(rect_points(Rect2(0, FASCIA_BOTTOM + 2, 390, 4)), NIGHT3)
-	mesh.convex(rect_points(Rect2(0, FASCIA_BOTTOM + 6, 390, 2)), INK)
-	mesh.convex(rect_points(Rect2(0, FASCIA_BOTTOM + 8, 390, FLOOR_FRONT - FASCIA_BOTTOM - 8)), NIGHT1)
+# Background, floor, cord and control plates, in the mock's order.
+static func _background_shapes(mesh) -> void:
+	mesh.convex(rect_points(Rect2(0, 0, 390, 844)), NIGHT0)
+	mesh.convex(rect_points(Rect2(0, 192, 390, 652)), NIGHT1)
+	mesh.convex(rect_points(Rect2(0, 300, 390, 544)), Color("#211838"))
+	mesh.convex(rect_points(Rect2(0, 352, 390, 492)), NIGHT1)
+	for star in STAR_POINTS:
+		mesh.convex(rect_points(Rect2(star, Vector2(2, 2))), NIGHT5)
 	var depth_colors := [NIGHT2, Color("#2a2145"), NIGHT3, Color("#3a2e5a")]
 	for row in 12:
 		for column in range(-1, 10):
-			mesh.convex(diamond(tile_center(column, row), FLOOR_PITCH.y), INK)
-	for row in 12:
-		var depth := mini(3, int(row / 3.0))
-		for column in range(-1, 10):
 			var center := tile_center(column, row)
+			mesh.convex(diamond(center, 21.0), INK)
 			# Plain flat glass; only colour separates lit from unlit tiles.
-			mesh.convex(diamond(center, 20.5), depth_colors[depth])
+			mesh.convex(diamond(center, 19.0), depth_colors[mini(3, int(row / 3.0))])
 	mesh.convex(rect_points(Rect2(0, FLOOR_FRONT, 390, 844 - FLOOR_FRONT)), NIGHT0)
-	mesh.convex(rect_points(Rect2(0, FLOOR_FRONT, 390, 3)), INK)
-	mesh.convex(rect_points(Rect2(0, FLOOR_FRONT + 3, 390, 2)), NIGHT2)
-	# Cord and cap from the rail to the ball.
-	mesh.convex(rect_points(Rect2(194, FASCIA_BOTTOM + 8, 2, BALL_CENTER.y - BALL_HALF - FASCIA_BOTTOM - 8)), NIGHT4)
-	mesh.convex(octagon(Rect2(189, BALL_CENTER.y - BALL_HALF - 5, 12, 6), 2), NIGHT5)
-	_wordmark(mesh, "DISCO", 70.0, [Color("#eef6ff"), Color("#a9c6e6"), Color("#6b86b0")])
-	_wordmark(mesh, "BREAKER", 140.0, [GOLD_HI, GOLD, GOLD_LO])
-	# Disabled campaign: a flat plate without a raised lip.
-	mesh.convex(octagon(REPAIR_RECT, 6), INK)
-	mesh.convex(octagon(REPAIR_RECT.grow(-2), 6 - 2 * (2 - sqrt(2.0))), NIGHT2)
-	mesh.convex(rect_points(Rect2(REPAIR_RECT.position.x + 8, REPAIR_RECT.position.y + 2, REPAIR_RECT.size.x - 16, 2)), NIGHT3)
-	# Tutorial: pink cap over a darker lip, with a flat top highlight.
-	mesh.convex(octagon(TUTORIAL_RECT, 6), INK)
-	var inner := TUTORIAL_RECT.grow(-2)
-	mesh.convex(octagon(inner, 6 - 2 * (2 - sqrt(2.0))), PINK_LO)
-	mesh.convex(octagon(Rect2(inner.position, inner.size - Vector2(0, 6)), 6 - 2 * (2 - sqrt(2.0))), PINK)
-	mesh.convex(rect_points(Rect2(inner.position.x + 6, inner.position.y, inner.size.x - 12, 2)), PINK_HI)
-	# Audio control plate; its icon and label are drawn per state.
+	mesh.convex(rect_points(Rect2(0, FLOOR_FRONT, 390, 2)), INK)
+	mesh.convex(rect_points(Rect2(192, 0, 4, 62)), NIGHT4)
+	mesh.convex(rect_points(Rect2(188, 58, 12, 6)), NIGHT5)
+	var inner := 6.0 - 2.0 * (2.0 - sqrt(2.0))
 	mesh.convex(octagon(MUTE_RECT, 6), INK)
-	mesh.convex(octagon(Rect2(MUTE_RECT.position + Vector2(2, 2), MUTE_RECT.size - Vector2(4, 8)), 6 - 2 * (2 - sqrt(2.0))), NIGHT3)
-	mesh.convex(rect_points(Rect2(MUTE_RECT.position.x + 7, MUTE_RECT.position.y + 2, MUTE_RECT.size.x - 14, 2)), NIGHT4)
+	mesh.convex(octagon(Rect2(MUTE_RECT.position + Vector2(2, 2), MUTE_RECT.size - Vector2(4, 8)), 4), NIGHT3)
+	mesh.convex(rect_points(Rect2(MUTE_RECT.position + Vector2(6, 2), Vector2(MUTE_RECT.size.x - 12, 2))), NIGHT4)
+	# Disabled campaign: a flat plate without a raised lip.
+	mesh.convex(octagon(REPAIR_PLATE, 6), INK)
+	mesh.convex(octagon(REPAIR_PLATE.grow(-2), inner), NIGHT2)
+	mesh.convex(rect_points(Rect2(REPAIR_PLATE.position + Vector2(6, 4), Vector2(REPAIR_PLATE.size.x - 12, 2))), NIGHT2.lerp(NIGHT4, 0.5))
+	# Tutorial: pink cap over a darker lip, with a flat top highlight.
+	mesh.convex(octagon(TUTORIAL_PLATE, 6), INK)
+	var cap := TUTORIAL_PLATE.grow(-2)
+	mesh.convex(octagon(cap, 4), PINK_LO)
+	mesh.convex(octagon(Rect2(cap.position, cap.size - Vector2(0, 6)), 4), PINK)
+	mesh.convex(rect_points(Rect2(TUTORIAL_PLATE.position + Vector2(6, 2), Vector2(TUTORIAL_PLATE.size.x - 12, 2))), PINK_HI)
 
 
-static func _cells(word: String, top: float) -> Array[PackedVector2Array]:
+static func _cells(word: String, origin: Vector2) -> Array[PackedVector2Array]:
 	var cells: Array[PackedVector2Array] = []
-	var x := 195.0 - (word.length() * 6 - 1) * CELL * 0.5
+	var x := origin.x
 	for letter in word:
 		var rows: Array = GLYPH[letter]
 		for row in rows.size():
 			var line: String = rows[row]
 			for column in line.length():
-				var p := Vector2(x + column * CELL, top + row * CELL)
+				var p := Vector2(x + column * CELL, origin.y + row * CELL)
 				var c := CELL
 				match line[column]:
 					"F":
@@ -479,21 +585,71 @@ static func _simplify(points: PackedVector2Array) -> PackedVector2Array:
 	return result
 
 
-func _wordmark(mesh, word: String, top: float, bands: Array) -> void:
-	var cells := _cells(word, top)
+# The sign's layers: shadow and ink are the letter cells dilated by a regular
+# octagon (edges stay at 0/45/90/135), the face is dilated by 2 px and split
+# into three flat bands, and thin 45-degree sheen lines run inside the cells.
+static func _wordmark_layers(word: String, origin: Vector2) -> Dictionary:
+	var cells := _cells(word, origin)
+	var layers := {"cells": cells, "shadow": [], "ink": [], "face": [], "sheen": []}
 	for cell in cells:
-		mesh.convex(_grow(cell, 4, Vector2(4, 4)), Color("#06040c"))
-	for cell in cells:
-		mesh.convex(_grow(cell, 4, Vector2.ZERO), INK)
-	# Three flat bands, split on horizontal lines across the 2 px dilation.
-	var span := 7 * CELL + 4
-	var limits := [top - 2, top - 2 + span * 0.36, top - 2 + span * 0.7, top + 7 * CELL + 2]
-	for cell in cells:
-		var grown := _grow(cell, 2, Vector2.ZERO)
-		for band in 3:
-			var strip := rect_points(Rect2(0, limits[band], 390, limits[band + 1] - limits[band]))
-			for part in Geometry2D.intersect_polygons(grown, strip):
-				mesh.convex(_simplify(part), bands[band])
+		layers.shadow.append(_grow(cell, 4, Vector2(4, 4)))
+		layers.ink.append(_grow(cell, 4, Vector2.ZERO))
+		layers.face.append(_grow(cell, 2, Vector2.ZERO))
+	var top := origin.y
+	var half := Vector2(0.8, 0.8) / sqrt(2.0)
+	for k in range(-40, 200, 23):
+		var a := Vector2(origin.x - 4 + k * 2, top + 7 * CELL)
+		var b := a + Vector2(7 * CELL, -7 * CELL)
+		layers.sheen.append(PackedVector2Array([a - half, b - half, b + half, a + half]))
+	return layers
+
+
+static func _logo_shapes(mesh) -> void:
+	for word in [["DISCO", DISCO_TOP], ["BREAKER", BREAKER_TOP]]:
+		var layers := _wordmark_layers(word[0], word[1])
+		for layer in ["shadow", "ink", "face"]:
+			for piece in layers[layer]:
+				mesh.convex(piece, INK)
+
+
+static func _svg_path(pieces: Array) -> String:
+	var d := ""
+	for piece in pieces:
+		# One winding for every subpath: the nonzero rule fills their union.
+		var loop: PackedVector2Array = piece
+		if Geometry2D.is_polygon_clockwise(loop):
+			loop.reverse()
+		for i in loop.size():
+			d += ("M" if i == 0 else "L") + "%.3f %.3f " % [loop[i].x - LOGO_RECT.position.x, loop[i].y - LOGO_RECT.position.y]
+		d += "Z "
+	return d
+
+
+# The sign as one SVG, rasterised by Godot at the device scale. Overlapping
+# cells become one antialiased union with holes, as in the mock's canvas fill.
+static func _logo_svg() -> String:
+	var body := ""
+	var defs := ""
+	for entry in [["DISCO", DISCO_TOP, ["#eef6ff", "#a9c6e6", "#6b86b0"]], ["BREAKER", BREAKER_TOP, ["#ffe7a3", "#f4b942", "#a5651f"]]]:
+		var layers := _wordmark_layers(entry[0], entry[1])
+		var name: String = entry[0]
+		var top: float = entry[1].y - LOGO_RECT.position.y
+		var bands: Array = entry[2]
+		defs += "<linearGradient id='%s' gradientUnits='userSpaceOnUse' x1='0' y1='%.3f' x2='0' y2='%.3f'>" % [name, top - 2, top + 7 * CELL + 2]
+		for stop in [[0.0, 0], [0.36, 0], [0.36, 1], [0.7, 1], [0.7, 2], [1.0, 2]]:
+			defs += "<stop offset='%.2f' stop-color='%s'/>" % [stop[0], bands[stop[1]]]
+		defs += "</linearGradient><clipPath id='%s-cells'><path d='%s'/></clipPath>" % [name, _svg_path(layers.cells)]
+		body += "<path fill='#06040c' d='%s'/>" % _svg_path(layers.shadow)
+		body += "<path fill='%s' d='%s'/>" % ["#" + INK.to_html(false), _svg_path(layers.ink)]
+		body += "<path fill='url(#%s)' d='%s'/>" % [name, _svg_path(layers.face)]
+		body += "<path fill='#ffffff' fill-opacity='0.9' clip-path='url(#%s-cells)' d='%s'/>" % [name, _svg_path(layers.sheen)]
+	return "<svg xmlns='http://www.w3.org/2000/svg' width='%d' height='%d'><defs>%s</defs>%s</svg>" % [LOGO_RECT.size.x, LOGO_RECT.size.y, defs, body]
+
+
+static func _logo_texture(scale: float) -> ImageTexture:
+	var image := Image.new()
+	image.load_svg_from_string(_logo_svg(), scale)
+	return ImageTexture.create_from_image(image)
 
 
 func _build_beam_texture(scale: float) -> GradientTexture1D:
@@ -511,21 +667,3 @@ func _build_beam_texture(scale: float) -> GradientTexture1D:
 	return texture
 
 
-func _build_spot_texture(scale: float) -> ImageTexture:
-	# A flattened landing patch with 45-degree sides, rasterised once per
-	# device scale with 4 x 4 supersampling.
-	var size := Vector2i(ceili(SPOT_HALF.x * 2.0 * scale), ceili(SPOT_HALF.y * 2.0 * scale))
-	var image := Image.create(size.x, size.y, false, Image.FORMAT_RGBA8)
-	for y in size.y:
-		for x in size.x:
-			var alpha := 0.0
-			for sy in 4:
-				for sx in 4:
-					var u := ((x + (sx + 0.5) / 4.0) / size.x * 2.0 - 1.0) * SPOT_HALF.x
-					var v := ((y + (sy + 0.5) / 4.0) / size.y * 2.0 - 1.0) * SPOT_HALF.y
-					if absf(u) + absf(v) <= SPOT_HALF.y and absf(v) <= SPOT_HALF.y * 0.5:
-						alpha += 1.0
-					elif absf(u) + absf(v) <= SPOT_HALF.x and absf(v) <= SPOT_HALF.y:
-						alpha += 0.5
-			image.set_pixel(x, y, Color(1, 1, 1, alpha / 16.0))
-	return ImageTexture.create_from_image(image)
