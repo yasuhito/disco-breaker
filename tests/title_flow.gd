@@ -17,21 +17,32 @@ func _run() -> void:
 	await process_frame
 	var initial: Dictionary = view.semantic_state()
 	_expect(initial.screen == "title" and not initial.campaign_available, "launch shows title, not campaign")
+	# Title plates are exactly their drawn bounds.
 	var was_muted: bool = view._muted
-	view._handle_design_tap(Vector2(View.Title.MUTE_RECT.end.x - 2, View.Title.MUTE_RECT.get_center().y))
-	_expect(view._muted != was_muted, "the whole drawn title audio plate toggles sound")
-	view._handle_design_tap(view._mute_rect.get_center())
-	_expect(view._muted == was_muted, "the shared audio hit area still toggles sound on the title")
+	var mute: Rect2 = View.Title.MUTE_RECT
+	view._handle_design_tap(mute.end - Vector2(0.5, 0.5))
+	_expect(view._muted != was_muted, "the drawn title audio plate's far corner toggles sound")
+	view._handle_design_tap(mute.position)
+	_expect(view._muted == was_muted, "the drawn title audio plate's near corner toggles sound")
+	for outside in [mute.position - Vector2(0.5, 0), mute.position - Vector2(0, 0.5), mute.end + Vector2(0.5, -1), mute.end + Vector2(-1, 0.5)]:
+		view._handle_design_tap(outside)
+	_expect(view._muted == was_muted, "taps just outside the title audio plate are ignored")
 	view._handle_design_tap(Vector2(195, 675))
 	view._handle_design_tap(Vector2(195, 309))
 	_expect(view.semantic_state() == initial, "disabled repair and decorative floor cannot change tutorial")
 	_expect(not view.inject_action({"type": "confirm"}), "hidden tutorial cannot accept injected input")
-	view._handle_design_tap(Vector2(23, 775))
-	view._handle_design_tap(Vector2(366, 775))
-	view._handle_design_tap(Vector2(195, 743))
-	view._handle_design_tap(Vector2(195, 806))
-	_expect(view.semantic_state() == initial, "outside tutorial button keeps original hit bounds")
-	view._handle_design_tap(Vector2(24, 744))
+	var plate: Rect2 = View.Title.TUTORIAL_RECT
+	var start: Rect2 = View.Title.REPAIR_RECT
+	view._handle_design_tap(Vector2(plate.position.x - 0.5, 780))
+	view._handle_design_tap(Vector2(plate.end.x + 0.5, 780))
+	view._handle_design_tap(Vector2(195, plate.position.y - 0.5))
+	view._handle_design_tap(Vector2(195, plate.end.y + 0.5))
+	view._handle_design_tap(Vector2(195, (start.end.y + plate.position.y) * 0.5))
+	view._handle_design_tap(start.position)
+	view._handle_design_tap(start.end - Vector2(0.5, 0.5))
+	_expect(view.semantic_state() == initial, "taps outside the drawn tutorial plate, in the gap or on the disabled plate do nothing")
+	# The plate's bottom lip is part of the button.
+	view._handle_design_tap(Vector2(195, plate.end.y - 0.5))
 	view._handle_design_tap(Vector2(195, 793))
 	_expect(not view.at_title and view.model.dialogue_visible, "double entry cannot dismiss lesson dialogue")
 	view._navigation_guard_until = 0

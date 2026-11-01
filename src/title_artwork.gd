@@ -32,12 +32,9 @@ const PINK_HI := Color("#ffd0e4")
 const PINK := Color("#f08fbd")
 const PINK_LO := Color("#a9487a")
 
-# Hit areas keep their original bounds; the plates are drawn where the mock
-# puts them. The title's audio hit area also covers its whole drawn plate.
-const TUTORIAL_RECT := Rect2(24, 744, 342, 62)
-const REPAIR_RECT := Rect2(24, 648, 342, 66)
-const TUTORIAL_PLATE := Rect2(28, 752, 332, 60)
-const REPAIR_PLATE := Rect2(28, 660, 332, 72)
+# Plates where the mock puts them; each title plate is exactly its hit area.
+const TUTORIAL_RECT := Rect2(28, 752, 332, 60)
+const REPAIR_RECT := Rect2(28, 660, 332, 72)
 const MUTE_RECT := Rect2(294, 16, 80, 44)
 const CENTER_X := 194.0
 
@@ -524,15 +521,15 @@ static func _background_shapes(mesh) -> void:
 	mesh.convex(octagon(Rect2(MUTE_RECT.position + Vector2(2, 2), MUTE_RECT.size - Vector2(4, 8)), 4), NIGHT3)
 	mesh.convex(rect_points(Rect2(MUTE_RECT.position + Vector2(6, 2), Vector2(MUTE_RECT.size.x - 12, 2))), NIGHT4)
 	# Disabled campaign: a flat plate without a raised lip.
-	mesh.convex(octagon(REPAIR_PLATE, 6), INK)
-	mesh.convex(octagon(REPAIR_PLATE.grow(-2), inner), NIGHT2)
-	mesh.convex(rect_points(Rect2(REPAIR_PLATE.position + Vector2(6, 4), Vector2(REPAIR_PLATE.size.x - 12, 2))), NIGHT2.lerp(NIGHT4, 0.5))
+	mesh.convex(octagon(REPAIR_RECT, 6), INK)
+	mesh.convex(octagon(REPAIR_RECT.grow(-2), inner), NIGHT2)
+	mesh.convex(rect_points(Rect2(REPAIR_RECT.position + Vector2(6, 4), Vector2(REPAIR_RECT.size.x - 12, 2))), NIGHT2.lerp(NIGHT4, 0.5))
 	# Tutorial: pink cap over a darker lip, with a flat top highlight.
-	mesh.convex(octagon(TUTORIAL_PLATE, 6), INK)
-	var cap := TUTORIAL_PLATE.grow(-2)
+	mesh.convex(octagon(TUTORIAL_RECT, 6), INK)
+	var cap := TUTORIAL_RECT.grow(-2)
 	mesh.convex(octagon(cap, 4), PINK_LO)
 	mesh.convex(octagon(Rect2(cap.position, cap.size - Vector2(0, 6)), 4), PINK)
-	mesh.convex(rect_points(Rect2(TUTORIAL_PLATE.position + Vector2(6, 2), Vector2(TUTORIAL_PLATE.size.x - 12, 2))), PINK_HI)
+	mesh.convex(rect_points(Rect2(TUTORIAL_RECT.position + Vector2(6, 2), Vector2(TUTORIAL_RECT.size.x - 12, 2))), PINK_HI)
 
 
 static func _cells(word: String, origin: Vector2) -> Array[PackedVector2Array]:

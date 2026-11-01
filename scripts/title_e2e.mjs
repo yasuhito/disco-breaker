@@ -185,7 +185,11 @@ try {
   for(const [width,height] of [[320,568],[412,915],[844,390]]) {
     const mobile = await create({viewport:{width,height},reducedMotion:'reduce'});
     await mobile.screenshot({path:`${out}/title-${width}x${height}.png`});
-    await tap(mobile,195,775,350);
+    // The tutorial plate is its drawn bounds (28,752 332x60), lip included.
+    await tap(mobile,195,814,350);
+    await tap(mobile,26,780,350);
+    assert.equal((await state(mobile)).screen,'title','taps beside the tutorial plate are ignored');
+    await tap(mobile,195,809,350);
     assert.equal((await state(mobile)).screen,'tutorial');
     await tap(mobile,38,36,350);
     assert.equal((await state(mobile)).screen,'title');

@@ -180,8 +180,8 @@ func semantic_state() -> Dictionary:
 
 
 func _handle_design_tap(point: Vector2) -> void:
-	# The title draws a slightly larger audio plate; its whole plate is live.
-	if _mute_rect.has_point(point) or (at_title and Title.MUTE_RECT.has_point(point)):
+	# The title's audio plate is drawn slightly larger; lessons keep theirs.
+	if (Title.MUTE_RECT if at_title else _mute_rect).has_point(point):
 		_toggle_mute()
 		return
 	if Time.get_ticks_msec() < _navigation_guard_until:
