@@ -40,6 +40,15 @@ func _init() -> void:
 	_run.call_deferred()
 
 
+# Weak references to the view's generated sounds, made here so that no stack
+# slot of the caller keeps a sound alive.
+func _weak_streams(view) -> Array:
+	var streams := [weakref(view._sting), weakref(view._final_sting), weakref(view._discharge)]
+	for tick in view._lamp_ticks:
+		streams.append(weakref(tick))
+	return streams
+
+
 func _expect(condition: bool, description: String) -> void:
 	if not condition:
 		failures.append(description)
@@ -402,6 +411,7 @@ func _run() -> void:
 	_test_plates_are_hit_areas()
 	_test_latest_utterance_only()
 	_test_inspection_presentation()
+	var bell_references := View.LESSON1_BELL.get_reference_count()
 	var view := View.new()
 	root.add_child(view)
 	view.size = Vector2(390, 844)
@@ -467,11 +477,18 @@ func _run() -> void:
 	_expect(not view.model.passed() and view._leaks.active, "calling again on the same leaking board does nothing")
 	_test_counting(view)
 	_test_lesson1_bell(view)
+	# The audio server drops stopped playbacks (and their streams) on its own
+	# mixing thread. After this long synchronous run the next frames advance
+	# game time faster than real time, so a fixed timer could end first and
+	# leave them alive at exit. Wait, in real time, until they are released.
+	var streams := _weak_streams(view)
 	view._audio.stop()
 	view._lamp_audio.stop()
 	view.queue_free()
-	await process_frame
-	await create_timer(0.2).timeout
+	var deadline := Time.get_ticks_msec() + 5000
+	while Time.get_ticks_msec() < deadline and (View.LESSON1_BELL.get_reference_count() > bell_references or streams.any(func(stream): return stream.get_ref() != null)):
+		await process_frame
+	_expect(View.LESSON1_BELL.get_reference_count() == bell_references and streams.all(func(stream): return stream.get_ref() == null), "every played sound is released after the view is freed")
 	if failures.is_empty():
 		print("PASS: lesson geometry, plates and hit areas, one-step input at any scale, latest utterance, inspection presentation and stale-result cancellation")
 	else:
