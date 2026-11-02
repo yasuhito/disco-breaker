@@ -126,14 +126,33 @@ try {
   await box(4, 3);
   await box(7);
   await bottom();
-  await assertState("state.floor_dark && !state.inspection.safe && !state.can_continue", "dark floor may fail inspection");
-  await captureState("stage4-failed-inspection", 2300);
+  await assertState("state.floor_dark && !state.inspection.safe && !state.can_continue && state.counting", "dark floor may fail inspection; the foreman counts first");
+  await captureState("stage4-failed-inspection", 4000);
   await box(1, 3);
   await assertState("!state.inspected && state.stage === 4", "an edit clears the verdict and keeps the floor editable");
   await box(4);
   await box(7, 3);
-  await bottom();
-  await assertState("state.inspection.safe && state.passed", "stage4 inspection passes");
+  // Call the foreman, then tap Continue while he counts, in one browser step:
+  // Continue must be inert until the count ends.
+  const raced = await page.evaluate(async () => {
+    const canvas = document.querySelector("canvas");
+    const rect = canvas.getBoundingClientRect();
+    const tap = async () => {
+      const init = { bubbles: true, clientX: rect.left + 194, clientY: rect.top + 760, button: 0 };
+      canvas.dispatchEvent(new MouseEvent("mousedown", init));
+      canvas.dispatchEvent(new MouseEvent("mouseup", init));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    };
+    await tap();
+    const called = { ...window.discoBreakerState };
+    await tap();
+    return { called, stage: window.discoBreakerState.stage };
+  });
+  const called = raced.called;
+  if (!(called.inspection.safe && called.passed && called.counting && !called.continue_enabled) || raced.stage !== 4) throw new Error(`stage4 must count before its verdict and Continue must not race it: ${JSON.stringify(raced)}`);
+  await page.screenshot({ path: `${artifactsDir}/stage4-counting.png` });
+  await page.waitForFunction(() => !window.discoBreakerState.counting, null, { timeout: 5000 });
+  await assertState("state.continue_enabled && state.utterance.kind === 'safe'", "the verdict follows the count");
   await captureState("stage4-inspection-passed");
   await bottom();
 
@@ -230,6 +249,7 @@ try {
   await box(4, 3);
   await bottom();
   await bottom();
+  await page.waitForTimeout(1800); // the foreman counts
   await bottom();
   await bottom();
   await box(1, 3);

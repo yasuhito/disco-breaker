@@ -119,7 +119,7 @@ try {
   await tap(page,194,760); // combined
   for(let i=0;i<3;i++) await tap(page,194,396);
   await tap(page,194,760); // inspection
-  await tap(page,194,760);
+  await tap(page,194,760,1800); // the foreman counts
   await tap(page,194,760);
   await tap(page,194,760); // trap
   assert.equal((await feedback(page)).leak_active,true);

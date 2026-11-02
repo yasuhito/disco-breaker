@@ -19,6 +19,9 @@ const PRIMARY_RECT := Rect2(16, 728, 356, 64)
 const SECONDARY_RECT := Rect2(74, 642, 240, 52)
 # Animations that have finished; resuming never replays them.
 const SETTLED := 10.0
+# Lesson 4's called inspection: the foreman traces the red line, then the
+# blue line (seconds), before his verdict is shown and Continue enabled.
+const COUNT_TIME := 1.6
 
 var model := Tutorial.new()
 var at_title := true
@@ -43,6 +46,10 @@ var _progress_from := 0.0
 var _progress_to := 0.0
 var _last_utterance := ""
 var _last_ready := false
+var _count_age := SETTLED
+var _count_sequence := -1
+var _pending_reward := ""
+var _pending_leak_sound := false
 var _rewards := Rewards.new()
 var _audio := AudioStreamPlayer.new()
 var _sting: AudioStreamWAV
@@ -93,7 +100,9 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	var counting := _counting()
 	if not reduced_motion:
+		_count_age += delta
 		_elapsed += delta
 		_tap_age += delta
 		_talk_age += delta
@@ -102,7 +111,43 @@ func _process(delta: float) -> void:
 		_progress_age += delta
 		_leak_age += delta
 		queue_redraw()
+	if counting and not _counting():
+		_finish_counting()
 	_tick_lamp_audio()
+
+
+# The counting presentation belongs to one inspected board; any later action,
+# home or reduced motion ends it (reduced motion never starts it).
+func _counting() -> bool:
+	return not reduced_motion and not at_title and _count_age < COUNT_TIME and model.trace.size() == _count_sequence
+
+
+# The verdict is spoken (and celebrated) after the foreman has counted.
+func _finish_counting() -> void:
+	_count_age = SETTLED
+	if model.trace.size() == _count_sequence:
+		if not _pending_reward.is_empty():
+			_success_age = 0.0
+			_play_reward(_pending_reward)
+		if _pending_leak_sound:
+			_play_discharge()
+	_pending_reward = ""
+	_pending_leak_sound = false
+	_publish_semantics()
+
+
+func _play_reward(event: String) -> void:
+	if Rewards.wants_sound(event, _muted, AudioServer.is_bus_mute(0)):
+		_audio.stream = _final_sting if event == "finale" else _sting
+		_audio.play()
+		_sound_starts += 1
+
+
+func _play_discharge() -> void:
+	if not _muted and not AudioServer.is_bus_mute(0):
+		_audio.stream = _discharge
+		_audio.play()
+		_leak_sound_starts += 1
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -152,6 +197,10 @@ func semantic_state() -> Dictionary:
 	state["screen"] = "title" if at_title else "tutorial"
 	state["tutorial_started"] = _tutorial_started
 	state["campaign_available"] = false
+	# The view's presentation of the verdict: while the foreman counts,
+	# Continue is shown disabled and ignores taps.
+	state["counting"] = _counting()
+	state["continue_enabled"] = model.can_continue() and not state.counting
 	return state
 
 
@@ -178,7 +227,8 @@ func _handle_design_tap(point: Vector2) -> void:
 	if PRIMARY_RECT.has_point(point):
 		# A disabled button does nothing.
 		if model.can_continue():
-			model.next_stage()
+			if not _counting():
+				model.next_stage()
 		elif model.can_call_foreman():
 			model.inspect_floor()
 		queue_redraw()
@@ -201,11 +251,13 @@ func _replay() -> void:
 
 
 func _open_tutorial() -> void:
+	# A new or restarted lesson is spoken; a resumed one keeps its settled line.
+	if model.finished or not _tutorial_started:
+		_talk_age = 0.0
 	if model.finished:
 		model.restart()
 	at_title = false
 	_tutorial_started = true
-	_talk_age = 0.0
 	# Entry and the bottom button overlap; a rapid second tap cannot act.
 	_navigation_guard_until = Time.get_ticks_msec() + 280
 	queue_redraw()
@@ -219,6 +271,8 @@ func _show_title() -> void:
 	_lamp_gate.reset()
 	# Keep the model and verdict for Continue, but never replay old effects/sounds.
 	_settle_animations()
+	# The current line counts as spoken: resuming does not animate it again.
+	_last_utterance = String(model.utterance().text)
 	queue_redraw()
 
 
@@ -229,6 +283,9 @@ func _settle_animations() -> void:
 	_enable_age = SETTLED
 	_progress_age = SETTLED
 	_leak_age = SETTLED
+	_count_age = SETTLED
+	_pending_reward = ""
+	_pending_leak_sound = false
 
 
 # The 390 x 844 design space is scaled uniformly and centred.
@@ -261,6 +318,7 @@ func _draw() -> void:
 		"muted": _muted, "progress": progress, "since_talk": _talk_age, "since_success": _success_age,
 		"since_enable": _enable_age, "since_press": _tap_age, "pressed_node": _tap_node_index,
 		"leak_age": _leak_age, "routes": _leak_routes,
+		"counting": _count_age if _counting() else -1.0,
 	})
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
@@ -294,38 +352,46 @@ func _text_width(text: String, font_size: int, bold := false) -> float:
 func _publish_semantics() -> void:
 	_definition = model.definition()
 	_state = model.semantic_state()
+	var last: Dictionary = _state.last_action
+	if not reduced_motion and not at_title and last.get("action", "") == "inspect" and not bool(last.payload.get("auto", true)) \
+			and _definition.lines.has("call") and int(_state.action_count) != _count_sequence:
+		_count_sequence = int(_state.action_count)
+		_count_age = 0.0
+	if not _counting():
+		_pending_reward = ""
+		_pending_leak_sound = false
 	var state := semantic_state()
 	var event := _rewards.observe(state)
 	if event == "reset":
 		_success_age = SETTLED
 		_audio.stop()
+	elif event in ["success", "finale"] and _counting():
+		_pending_reward = event
 	elif not event.is_empty():
 		if event in ["success", "finale"]:
 			_success_age = 0.0
-		if Rewards.wants_sound(event, _muted, AudioServer.is_bus_mute(0)):
-			_audio.stream = _final_sting if event == "finale" else _sting
-			_audio.play()
-			_sound_starts += 1
+		_play_reward(event)
 	var leak_event := _leaks.observe(state)
 	if leak_event == "reset":
 		_leak_routes.clear()
 		_leak_age = SETTLED
 		_audio.stop()
 	elif leak_event == "leak":
-		_leak_age = 0.0
 		_build_leak_routes()
-		if not _muted and not AudioServer.is_bus_mute(0):
-			_audio.stream = _discharge
-			_audio.play()
-			_leak_sound_starts += 1
+		# After counting, the leak presentation starts with its discharge.
+		_leak_age = -COUNT_TIME if _counting() else 0.0
+		if _counting():
+			_pending_leak_sound = true
+		else:
+			_play_discharge()
 	if _leaks.active and _leak_routes.is_empty():
 		_build_leak_routes()
 	# A new utterance is spoken; a newly available button hops once.
-	var utterance := String(state.utterance.text)
+	var utterance := _spoken(state)
 	if utterance != _last_utterance:
 		_last_utterance = utterance
 		_talk_age = 0.0
-	var ready := bool(state.can_continue) or bool(state.can_call_foreman)
+	var ready := bool(state.continue_enabled) or bool(state.can_call_foreman)
 	if ready and not _last_ready:
 		_enable_age = 0.0
 	_last_ready = ready
@@ -346,12 +412,19 @@ func _publish_semantics() -> void:
 		_announce(state)
 
 
+# The line in the bubble: the foreman counts first in lesson 4.
+func _spoken(state: Dictionary) -> String:
+	if state.get("counting", false):
+		return String(_definition.lines.call)
+	return String(state.utterance.text)
+
+
 # Screen readers hear the foreman's latest line and the button state, once
 # per change, through a visually hidden live region.
 func _announce(state: Dictionary) -> void:
 	var text := "タイトル画面" if at_title else "レッスン %d / %d。親方「%s」。%s" % [
-		state.stage, state.stage_count, String(state.utterance.text).replace("\n", ""),
-		"もう一度 を押せる" if state.finished else ("つづける を押せる" if state.can_continue else ("親方を呼ぶ を押せる" if state.can_call_foreman else "つづける はまだ押せない"))]
+		state.stage, state.stage_count, _spoken(state).replace("\n", ""),
+		"もう一度 を押せる" if state.finished else ("つづける を押せる" if state.continue_enabled else ("親方を呼ぶ を押せる" if state.can_call_foreman else "つづける はまだ押せない"))]
 	JavaScriptBridge.eval("(() => { let live = document.getElementById('disco-breaker-live'); if (!live) { live = document.createElement('div'); live.id = 'disco-breaker-live'; live.setAttribute('aria-live', 'polite'); live.setAttribute('role', 'status'); live.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap'; document.body.appendChild(live); } const text = %s; if (live.textContent !== text) live.textContent = text; })()" % JSON.stringify(text))
 
 

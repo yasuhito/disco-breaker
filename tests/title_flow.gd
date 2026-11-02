@@ -44,6 +44,7 @@ func _run() -> void:
 	# The plate's bottom lip is part of the button.
 	view._handle_design_tap(Vector2(195, plate.end.y - 0.5))
 	_expect(not view.at_title and view.model.stage_index == 0 and not view.model.touched, "the tutorial opens on an editable first lesson")
+	_expect(view._talk_age == 0.0, "a new lesson is spoken")
 	view._navigation_guard_until = 0
 	view._handle_design_tap(Vector2(194, 396))
 	view._publish_semantics()
@@ -56,7 +57,7 @@ func _run() -> void:
 	view._handle_design_tap(Vector2(195, 780))
 	view._handle_design_tap(Vector2(195, 760))
 	_expect(not view.at_title and view.model.semantic_state() == playing, "continue preserves corrections, inspection and trace; a double tap cannot advance")
-	_expect(view._talk_age == 0.0 and view._success_age >= View.SETTLED, "resuming speaks the latest line again but never replays the success")
+	_expect(view._talk_age >= View.SETTLED and view._success_age >= View.SETTLED, "resuming keeps the settled line and never replays the talk or the success")
 	# A revealed leak can be left/resumed without replaying the discharge.
 	view.model.stage_index = 4
 	view.model._reset_stage()

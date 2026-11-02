@@ -81,6 +81,8 @@ const SPEAKER_SPAN := {false: Vector2(0, 34.2), true: Vector2(-8.5, 22.5)}
 const LEAK_ROUTE_AT := 0.7
 const LEAK_REVEAL_AT := 1.4
 const LEAK_DONE_AT := 2.0
+# Lesson 4's counting (the view's COUNT_TIME): red line, then blue line.
+const COUNT_LINE_TIME := 0.8
 
 var view
 var _aa := 0.25
@@ -142,7 +144,12 @@ func draw(target, model, anim: Dictionary) -> void:
 	var reduced: bool = anim.reduced
 	var now: float = anim.time
 	var utterance: Dictionary = state.utterance
-	var happy := bool(state.passed) or bool(state.finished)
+	# While the foreman counts, his verdict waits: the bubble holds the
+	# counting line and Continue stays disabled.
+	var counting := float(anim.get("counting", -1.0))
+	if counting >= 0.0:
+		utterance = {"kind": "counting", "text": String(model.definition().lines.call)}
+	var happy := (bool(state.passed) and counting < 0.0) or bool(state.finished)
 	var worry: bool = utterance.kind == "unsafe"
 	_rect(0, 0, 195, 422, NIGHT1)
 	_home(HOME.position.x, HOME.position.y)
@@ -181,12 +188,13 @@ func draw(target, model, anim: Dictionary) -> void:
 		_button(SECONDARY, "secondary", "normal", "タイトルへ", false)
 	elif state.stage_id == "graduation_3x3":
 		_button(SECONDARY, "secondary", "normal", "自由練習をスキップ", false, true)
-	var hop: float = -1.0 if not reduced and float(anim.since_enable) < 0.18 and (state.can_continue or state.can_call_foreman) else 0.0
+	var can_continue: bool = state.can_continue and counting < 0.0
+	var hop: float = -1.0 if not reduced and float(anim.since_enable) < 0.18 and (can_continue or state.can_call_foreman) else 0.0
 	var primary := PRIMARY
 	primary.position.y += hop
 	if state.finished:
 		_button(primary, "success", "normal", "もう一度", true)
-	elif state.can_continue:
+	elif can_continue:
 		_button(primary, "success", "normal", "つづける", true)
 	elif state.inspection_mode == "call":
 		_button(primary, "call", "normal" if state.can_call_foreman else "disabled", "親方を呼ぶ", true)
@@ -248,7 +256,12 @@ func _board(model, state: Dictionary, anim: Dictionary) -> void:
 			families.append(2)
 	var residual := {1: Array(model._residual_support(1)), 2: Array(model._residual_support(2))}
 	var routes: Array = anim.routes if leak else []
-	if leak or (inspected and state.inspection_mode == "call"):
+	var counting := float(anim.get("counting", -1.0))
+	if counting >= 0.0:
+		# The foreman traces the red line (top row), then the blue line (left column).
+		for component in [1, 2]:
+			_inspection_line(component, 1.0, clampf((counting - (component - 1) * COUNT_LINE_TIME) / COUNT_LINE_TIME, 0.0, 1.0))
+	elif (leak and age >= 0.0) or (inspected and state.inspection_mode == "call"):
 		# The foreman's inspection lines: red counts the top row, blue the left column.
 		for component in ([1, 2] if not leak else families):
 			_inspection_line(component, 1.0 if not residual[component].is_empty() else 0.6)
@@ -258,7 +271,7 @@ func _board(model, state: Dictionary, anim: Dictionary) -> void:
 			for check in route.checks:
 				_cracks(face_rect(faces[check]))
 	var target: int = d.target
-	var happy: bool = state.passed
+	var happy: bool = state.passed and counting < 0.0
 	# The gold hint ring steps aside while a leak is being explained.
 	if target >= 0 and not happy and not state.finished and not leak:
 		_target_ring(socket_center(target), GOLD if reduced or int(now / 0.6) % 2 else GOLD_LO)
@@ -271,7 +284,7 @@ func _board(model, state: Dictionary, anim: Dictionary) -> void:
 		var hidden := int(d.hidden.get(node, 0)) if reveal else 0
 		var pressed: bool = not reduced and node == int(anim.pressed_node) and float(anim.since_press) < 0.11
 		_socket(socket_center(node), int(state.corrections[node]), pressed, happy and node == target, hidden)
-	if leak:
+	if leak and age >= 0.0:
 		_leftover_marks(families, residual)
 		if age >= LEAK_ROUTE_AT:
 			for route in routes:
@@ -411,13 +424,18 @@ func _sparks(center: Vector2, progress: float) -> void:
 		_diamond(center.x + u.x * k, center.y + u.y * k, r, GOLD_HI if (u.x + u.y) & 1 else WHITE)
 
 
-func _inspection_line(component: int, alpha: float) -> void:
+# A traced line grows from its start with a white marker at its head.
+func _inspection_line(component: int, alpha: float, traced := 1.0) -> void:
 	var c0 := socket_center(0)
 	var c8 := socket_center(8)
-	if component == 1:
-		_stroke(PackedVector2Array([Vector2(c0.x - 27, c0.y), Vector2(c8.x + 27, c0.y)]), Color(RED_HI, alpha), 1.2, [3.0, 2.0])
-	else:
-		_stroke(PackedVector2Array([Vector2(c0.x, c0.y - 27), Vector2(c0.x, c8.y + 27)]), Color(BLUE_HI, alpha), 1.2, [3.0, 2.0])
+	var line := PackedVector2Array([Vector2(c0.x - 27, c0.y), Vector2(c8.x + 27, c0.y)]) if component == 1 else PackedVector2Array([Vector2(c0.x, c0.y - 27), Vector2(c0.x, c8.y + 27)])
+	var length := _length(line)
+	if traced <= 0.0:
+		return
+	_stroke(_slice(line, 0.0, length * traced), Color(RED_HI if component == 1 else BLUE_HI, alpha), 1.2, [3.0, 2.0])
+	if traced < 1.0:
+		var head := _point_at(line, length * traced).round()
+		_plate(head.x - 3.5, head.y - 3.5, 7, 7, 2, WHITE)
 
 
 # Radial glass cracks from the centre of a floor the leak route crosses.

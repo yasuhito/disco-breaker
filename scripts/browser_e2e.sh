@@ -154,14 +154,19 @@ click_canvas 194 304 stage4-leak-top-red
 click_canvas 194 396 stage4-leak-center-blue 3
 click_canvas 194 488 stage4-leak-bottom-red
 click_canvas 194 760 stage4-call-unsafe
-assert_state "${S}.floor_dark && !${S}.inspection.safe && !${S}.can_continue && !${S}.can_call_foreman"
-capture_state 13 stage4-failed-inspection 2.3
+assert_state "${S}.floor_dark && !${S}.inspection.safe && !${S}.can_continue && !${S}.can_call_foreman && ${S}.counting"
+capture_state 13 stage4-failed-inspection 4.0
 click_canvas 194 304 stage4-undo-top 3
 assert_state "${S}.stage === 4 && !${S}.inspected"
 click_canvas 194 396 stage4-undo-center
 click_canvas 194 488 stage4-undo-bottom 3
-click_canvas 194 760 stage4-call-foreman
-assert_state "${S}.inspection.safe && ${S}.passed"
+# Call the foreman, then tap Continue while he counts, in one browser step:
+# Continue must be inert until the count ends.
+chrome-devtools-axi eval "async () => { const c=document.querySelector('canvas'); const r=c.getBoundingClientRect(); const tap = async () => { const e={bubbles:true,clientX:r.left+194,clientY:r.top+760,button:0}; c.dispatchEvent(new MouseEvent('mousedown',e)); c.dispatchEvent(new MouseEvent('mouseup',e)); await new Promise(resolve => setTimeout(resolve,200)); }; await tap(); const s=window.discoBreakerState; if (!(s.inspection.safe && s.passed && s.counting && !s.continue_enabled)) throw new Error('the foreman must count first'); await tap(); if (window.discoBreakerState.stage !== 4) throw new Error('Continue raced the count'); return true; }" >/dev/null
+record_action stage4-call-foreman
+record_action stage4-continue-during-count
+sleep 1.6
+assert_state "!${S}.counting && ${S}.continue_enabled && ${S}.utterance.kind === 'safe'"
 capture_state 14 stage4-inspection-passed
 chrome-devtools-axi screenshot artifacts/tutorial-inspection-dialogue.png >/dev/null
 click_canvas 194 760 stage4-continue
@@ -258,6 +263,7 @@ click_canvas 194 760 skip-run-stage2-continue
 click_canvas 194 396 skip-run-stage3-solve 3
 click_canvas 194 760 skip-run-stage3-continue
 click_canvas 194 760 skip-run-stage4-call
+sleep 1.8
 click_canvas 194 760 skip-run-stage4-continue
 click_canvas 194 760 skip-run-stage5-call
 click_canvas 194 304 skip-run-stage5-repair-top 3

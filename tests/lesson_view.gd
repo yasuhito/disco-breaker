@@ -127,7 +127,8 @@ func _test_angular_geometry() -> void:
 	for model in _boards():
 		for time in [0.0, 0.37, 1.1]:
 			for reduced in [true, false]:
-				var probe := _render(model, _anim(time, reduced, {"routes": _routes(model), "leak_age": time + 0.5, "since_success": time * 0.5, "since_talk": time}))
+				var counting: float = time if model.definition().lines.has("call") and not reduced else -1.0
+				var probe := _render(model, _anim(time, reduced, {"routes": _routes(model), "leak_age": time + 0.5, "since_success": time * 0.5, "since_talk": time, "counting": counting}))
 				for polygon in probe.polygons:
 					_expect(_angular(polygon, true), "lesson polygon edges are 0, 45 or 90 degrees (%s)" % model.definition().id)
 				for stroke in probe.strokes:
@@ -263,6 +264,91 @@ func _tap(view, point: Vector2, touch := true) -> void:
 	view._gui_input(release)
 
 
+# Lesson 4: the foreman counts the red line, then the blue line, before
+# his verdict; Continue is inert meanwhile; edits and home cancel it.
+func _test_counting(view) -> void:
+	var stage4 := func() -> void:
+		view.model.stage_index = 3
+		view.model._reset_stage()
+		view.model._record("next_stage", {})
+		view._navigation_guard_until = 0
+		view._publish_semantics()
+	view.reduced_motion = false
+	view._muted = false
+	stage4.call()
+	var sounds: int = view._sound_starts
+	view._handle_design_tap(View.PRIMARY_RECT.get_center())
+	view._publish_semantics()
+	var state: Dictionary = view.semantic_state()
+	_expect(state.passed and state.counting and not state.continue_enabled, "calling the foreman starts counting; the model verdict is already safe")
+	_expect(view._spoken(state) == "上の段と左の列を\n数えるぞ。" and view._talk_age == 0.0, "the foreman says he is counting")
+	_expect(view._sound_starts == sounds and view._success_age >= View.SETTLED, "the pass is not celebrated before the count")
+	var probe := _render(view.model, _anim(0.0, false, {"counting": 0.4, "state": view.model.semantic_state()}))
+	var drawn := _texts(probe)
+	_expect(drawn.has("数えるぞ。") and not drawn.has("漏電はないぞ。") and drawn.has("親方を呼ぶ") and not drawn.has("つづける"), "while counting only the counting line shows and Continue is not drawn")
+	view._handle_design_tap(View.PRIMARY_RECT.get_center())
+	_expect(view.model.stage_index == 3, "Continue cannot race the count")
+	view._process(0.9)
+	_expect(view.semantic_state().counting, "the blue line is still being traced")
+	view._process(0.8)
+	state = view.semantic_state()
+	_expect(not state.counting and state.continue_enabled and view._spoken(state) == "検査合格！\n漏電はないぞ。", "after counting the verdict is spoken and Continue enabled")
+	_expect(view._sound_starts == sounds + 1 and view._success_age < 0.1 and view._enable_age < 0.1, "the pass is celebrated once, after the count")
+	view._process(2.0)
+	_expect(view._sound_starts == sounds + 1, "no second celebration")
+	# An edit during the count cancels it with its verdict and pending celebration.
+	stage4.call()
+	sounds = view._sound_starts
+	view._handle_design_tap(View.PRIMARY_RECT.get_center())
+	view._publish_semantics()
+	view._handle_design_tap(Lesson.socket_center(0) * 2.0)
+	view._publish_semantics()
+	state = view.semantic_state()
+	_expect(not state.counting and not state.inspected and state.utterance.kind == "mistake" and view._spoken(state) == state.utterance.text, "an edit replaces the counting line; no stale explanation")
+	view._process(2.0)
+	_expect(view._sound_starts == sounds and not view.model.passed(), "a cancelled count never celebrates")
+	# Home during the count settles it: the resumed lesson shows the verdict without replay.
+	stage4.call()
+	sounds = view._sound_starts
+	view._handle_design_tap(View.PRIMARY_RECT.get_center())
+	view._publish_semantics()
+	view._show_title()
+	view._publish_semantics()
+	view._navigation_guard_until = 0
+	view._open_tutorial()
+	view._publish_semantics()
+	state = view.semantic_state()
+	_expect(not state.counting and state.continue_enabled and view._talk_age >= View.SETTLED and view._sound_starts == sounds, "home cancels the presentation; resume is settled and silent")
+	# A leak found by counting is explained only after the count.
+	stage4.call()
+	for tap in 3:
+		view._handle_design_tap(Lesson.socket_center(4) * 2.0)
+	view._handle_design_tap(Lesson.socket_center(1) * 2.0)
+	view._handle_design_tap(Lesson.socket_center(7) * 2.0)
+	view._publish_semantics()
+	_expect(view.model.can_call_foreman() and not view.model._inspect_residual().safe, "fixture: a dark leaking inspection lesson")
+	var leaks: int = view._leak_sound_starts
+	view._handle_design_tap(View.PRIMARY_RECT.get_center())
+	view._publish_semantics()
+	_expect(view.semantic_state().counting and view._leak_age < 0.0 and view._leak_sound_starts == leaks, "the discharge waits for the count")
+	view._process(1.7)
+	_expect(view._leak_sound_starts == leaks + 1 and view._leak_age >= 0.0 and view._leak_age < 0.2, "the leak presentation follows the count")
+	# Reduced motion skips straight to the final verdict; lesson 5 never counts.
+	view.reduced_motion = true
+	stage4.call()
+	view._handle_design_tap(View.PRIMARY_RECT.get_center())
+	view._publish_semantics()
+	_expect(not view.semantic_state().counting and view.semantic_state().continue_enabled, "reduced motion shows the verdict at once")
+	view.reduced_motion = false
+	view.model.stage_index = 4
+	view.model._reset_stage()
+	view.model._record("next_stage", {})
+	view._publish_semantics()
+	view._handle_design_tap(View.PRIMARY_RECT.get_center())
+	view._publish_semantics()
+	_expect(not view.semantic_state().counting and view._leak_age == 0.0, "the trap's leak is explained at once, as before")
+
+
 func _run() -> void:
 	_test_angular_geometry()
 	_test_plates_are_hit_areas()
@@ -331,6 +417,7 @@ func _run() -> void:
 	view._handle_design_tap(View.PRIMARY_RECT.get_center())
 	view._publish_semantics()
 	_expect(not view.model.passed() and view._leaks.active, "calling again on the same leaking board does nothing")
+	_test_counting(view)
 	view._audio.stop()
 	view._lamp_audio.stop()
 	view.queue_free()

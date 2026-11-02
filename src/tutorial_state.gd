@@ -80,7 +80,9 @@ func _build_stages() -> Array[Dictionary]:
 			"id": "foreman_inspection", "title": "親方の検査", "size": 3, "inspect": "call",
 			"hidden": {4: BOTH}, "preset": {4: BOTH}, "target": -1,
 			"lines": {"open": "床は全部暗い。\nでも安全かは別の話。", "lit": "光る床がある。\n暗くしてから呼んでね。",
-				"dark": "暗くなった。\n親方を呼ぼう。", "ok": "検査合格！\n漏電はないぞ。"},
+				"dark": "暗くなった。\n親方を呼ぼう。", "ok": "検査合格！\n漏電はないぞ。",
+				# Spoken while the foreman counts after being called (the view's presentation).
+				"call": "上の段と左の列を\n数えるぞ。"},
 		},
 		{
 			"id": "crossing_trap", "title": "見えない漏電", "size": 3, "inspect": "call",
