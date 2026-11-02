@@ -306,7 +306,8 @@ func _test_semantic_contract() -> void:
 
 func _test_latest_utterance() -> void:
 	var model := Tutorial.new()
-	_expect(model.utterance() == {"kind": "start", "text": "中央を1回タップ。\n赤い配線にしよう！"}, "lesson opens with its instruction")
+	_expect(model.utterance() == {"kind": "start", "text": "赤い床がちらついてるね。\n真ん中を1回タップして、\n赤い配線でちらつきを消そう！"}, "lesson opens with its approved instruction")
+	_expect(model.definition().title == "赤いちらつきを直そう", "lesson 1 has its approved title")
 	model.tap_node(0, 0)
 	_expect(model.utterance() == {"kind": "mistake", "text": Tutorial.LIT_GENERIC}, "a mistake replaces the instruction (no stale hint about the centre)")
 	model.tap_node(0, 0)
@@ -370,15 +371,28 @@ func _test_foreman_copy_fits_bubble() -> void:
 			for line in stage.lines.values():
 				copy.append(String(line))
 	# The bubble holds three 24 px lines in its 114-unit text column, also in bold.
+	# The human-approved first-lesson line is wider: it must still stay on the
+	# paper (bubble 256 px - 14 px text inset - 2 px ink outline = 240 px).
+	var approved_wide := "赤い配線でちらつきを消そう！"
 	for text in copy:
 		var lines := text.split("\n")
 		_expect(lines.size() <= 3, "utterance exceeds three lines: %s" % text)
 		for line in lines:
 			for font in [regular, bold]:
-				_expect(font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x <= 228.0, "utterance line is wider than the bubble: %s" % line)
+				var limit := 240.0 if line == approved_wide else 228.0
+				_expect(font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x <= limit, "utterance line is wider than the bubble: %s" % line)
 		for character in text:
 			if character != "\n":
 				_expect(regular.has_char(character.unicode_at(0)), "bundled font lacks glyph: %s" % character)
+	# Lesson titles (Bold 30 px from x = 16) stay inside the 390 px design width
+	# with the same 16 px margin on the right.
+	for phase in 2:
+		var titled := Tutorial.new()
+		titled.boundary_phase = phase
+		for stage in titled.stages():
+			_expect(bold.get_string_size(String(stage.title), HORIZONTAL_ALIGNMENT_LEFT, -1, 30).x <= 358.0, "lesson title is wider than the screen: %s" % stage.title)
+			for character in String(stage.title):
+				_expect(regular.has_char(character.unicode_at(0)), "bundled font lacks title glyph: %s" % character)
 	for path in ["res://src/tutorial_state.gd", "res://src/tutorial_view.gd", "res://src/lesson_artwork.gd", "res://src/title_artwork.gd"]:
 		for character in FileAccess.get_file_as_string(path):
 			if character.unicode_at(0) >= 0x3000:

@@ -62,9 +62,9 @@ func stages() -> Array[Dictionary]:
 func _build_stages() -> Array[Dictionary]:
 	var definitions: Array[Dictionary] = [
 		{
-			"id": "red_one_tap", "title": "赤い配線", "size": 3, "inspect": "auto",
+			"id": "red_one_tap", "title": "赤いちらつきを直そう", "size": 3, "inspect": "auto",
 			"hidden": {4: RED}, "preset": {}, "target": 4,
-			"lines": {"open": "中央を1回タップ。\n赤い配線にしよう！", "ok": "いいぞ！ 点滅が消えた。"},
+			"lines": {"open": "赤い床がちらついてるね。\n真ん中を1回タップして、\n赤い配線でちらつきを消そう！", "ok": "いいぞ！ 点滅が消えた。"},
 		},
 		{
 			"id": "blue_two_taps", "title": "青い配線", "size": 3, "inspect": "auto",
