@@ -40,6 +40,120 @@ func _init() -> void:
 	_run.call_deferred()
 
 
+# ---- shared geometry: legend, socket wires and the foreman ----------------
+
+func _shapes(probe: Probe, color: Color) -> Array[PackedVector2Array]:
+	var result: Array[PackedVector2Array] = []
+	for entry in probe.log:
+		if entry[0] == "polygon" and entry[2] == color:
+			result.append(entry[1])
+	return result
+
+
+func _union(shapes: Array) -> Rect2:
+	var box := _bounds(shapes[0])
+	for shape in shapes:
+		box = box.merge(_bounds(shape))
+	return box
+
+
+func _mean(points: PackedVector2Array) -> Vector2:
+	var total := Vector2.ZERO
+	for point in points:
+		total += point
+	return total / points.size()
+
+
+func _near(a: Vector2, b: Vector2) -> bool:
+	return a.distance_to(b) < 0.001
+
+
+# The legend's four sockets: dots symmetric about the centre, red and blue
+# bands of one size crossing exactly at the centre, chevrons of two equal
+# joined arms centred between sockets.
+func _test_legend_alignment() -> void:
+	var probe := Probe.new()
+	var art := Lesson.new()
+	art.view = probe
+	art._legend(Lesson.LEGEND_Y)
+	var grooves := _shapes(probe, Lesson.GROUT)
+	var reds := _shapes(probe, Lesson.RED)
+	var blues := _shapes(probe, Lesson.BLUE)
+	var dots := _shapes(probe, Lesson.NIGHT5)
+	var arms := _shapes(probe, Lesson.MIST)
+	_expect(grooves.size() == 4 and reds.size() == 2 and blues.size() == 2 and dots.size() == 2 and arms.size() == 6, "the legend draws four sockets, two red, two blue, two dots and three chevrons")
+	if grooves.size() != 4 or reds.size() != 2 or blues.size() != 2 or dots.size() != 2 or arms.size() != 6:
+		return
+	var centres: Array[Vector2] = []
+	for groove in grooves:
+		centres.append(_bounds(groove).get_center())
+		_expect(is_equal_approx(centres[-1].y, (Lesson.LEGEND_Y + 0.5) * Lesson.U), "each legend socket is centred on the legend line")
+	var left := _bounds(dots[0]).get_center()
+	var right := _bounds(dots[1]).get_center()
+	_expect(_near((left + right) * 0.5, centres[0]) and is_equal_approx(left.y, right.y), "the empty socket's two dots are symmetric about its centre")
+	for band in [[reds[0], 1], [blues[0], 2], [reds[1], 3], [blues[1], 3]]:
+		_expect(_near(_mean(band[0]), centres[band[1]]), "each legend wire band is centred on its socket (both cross at the centre)")
+	_expect(_bounds(reds[1]).size.is_equal_approx(_bounds(blues[1]).size), "red and blue legend bands are the same size")
+	for gap in 3:
+		var upper: PackedVector2Array = arms[gap * 2]
+		var lower: PackedVector2Array = arms[gap * 2 + 1]
+		_expect(_near(upper[3], lower[0]) and _near(upper[2], lower[1]), "each chevron's arms join on one edge")
+		_expect(is_equal_approx(_bounds(upper).size.y, _bounds(lower).size.y), "each chevron's arms are equally long")
+		_expect(_near(_union([upper, lower]).get_center(), (centres[gap] + centres[gap + 1]) * 0.5), "each chevron is centred between its sockets")
+
+
+# On the board, a socket's red and blue bands cross at its centre too.
+func _test_socket_wire_crossing() -> void:
+	var probe := Probe.new()
+	var art := Lesson.new()
+	art.view = probe
+	var center := Lesson.socket_center(4)
+	art._socket(center, 3, false, false, 0)
+	for color in [Lesson.RED, Lesson.BLUE, Lesson.RED_HI, Lesson.BLUE_HI]:
+		var bands := _shapes(probe, color).filter(func(shape): return _bounds(shape).size.y > 20.0)
+		_expect(bands.size() == 1 and _near(_mean(bands[0]), center * Lesson.U), "a socket's wire bands cross at its centre")
+
+
+# The foreman's face and shirt are symmetric about the head's centre in every
+# pose; the happy eyes are joined "^" shapes; the collar ends on the tie.
+func _test_foreman_alignment() -> void:
+	var axis := 24.0 * Lesson.U
+	var base := {"bob": 0.0, "hop": 0.0, "blink": false, "mouth": "rest", "brows": "neutral", "thumb": false}
+	var poses := {"rest": {}, "talk": {"mouth": "talk"}, "happy": {"mouth": "smile", "brows": "up", "thumb": true},
+		"worry": {"mouth": "worry", "brows": "worry"}, "blink": {"blink": true}, "happy blink": {"mouth": "smile", "brows": "up", "thumb": true, "blink": true}}
+	for name in poses:
+		var pose := base.duplicate()
+		pose.merge(poses[name], true)
+		var probe := Probe.new()
+		var art := Lesson.new()
+		art.view = probe
+		art._foreman(0.0, 0.0, pose)
+		var u := Lesson.U
+		var eyes := _shapes(probe, Lesson.INK).filter(func(shape): var box := _bounds(shape); return box.size.x <= 5.0 * u and box.position.y >= 20.0 * u and box.end.y <= 26.0 * u)
+		var brows := _shapes(probe, Lesson.HAIR).filter(func(shape): return _bounds(shape).end.y <= 23.0 * u)
+		var nose := _shapes(probe, Lesson.SKIN_LO).filter(func(shape): var box := _bounds(shape); return box.position.y == 23.0 * u and box.size.y == 4.0 * u)
+		for feature in [["eyes", eyes], ["brows", brows]]:
+			var left: Array = feature[1].filter(func(shape): return _bounds(shape).get_center().x < axis)
+			var right: Array = feature[1].filter(func(shape): return _bounds(shape).get_center().x > axis)
+			_expect(not left.is_empty() and left.size() == right.size(), "%s: both %s are drawn" % [name, feature[0]])
+			if left.is_empty() or right.is_empty():
+				continue
+			var l := _union(left)
+			var r := _union(right)
+			_expect(is_equal_approx(l.position.x + r.end.x, 2.0 * axis) and is_equal_approx(l.end.x + r.position.x, 2.0 * axis) and is_equal_approx(l.position.y, r.position.y) and is_equal_approx(l.end.y, r.end.y), "%s: the %s mirror about the face's centre" % [name, feature[0]])
+			if feature[0] == "eyes" and pose.mouth == "smile" and not pose.blink:
+				for side in [left, right]:
+					_expect(side.size() == 2 and _near(side[0][1], side[1][0]) and is_equal_approx(_bounds(side[0]).position.y, _bounds(side[1]).position.y), "%s: each happy eye is one joined ^" % name)
+		_expect(nose.size() == 1 and is_equal_approx(_bounds(nose[0]).get_center().x, axis), "%s: the nose is on the face's centre" % name)
+		var shirt := _shapes(probe, Lesson.SHIRT)
+		_expect(shirt.size() == 3, "%s: collar arms and tie" % name)
+		if shirt.size() == 3:
+			var tie := _bounds(shirt[2])
+			var arms := _union([shirt[0], shirt[1]])
+			_expect(is_equal_approx(arms.position.x + arms.end.x, 2.0 * axis) and is_equal_approx(tie.get_center().x, axis), "%s: the collar is symmetric about the face's centre" % name)
+			_expect(is_equal_approx(minf(shirt[0][3].x, shirt[1][3].x), tie.position.x) and is_equal_approx(maxf(shirt[0][2].x, shirt[1][2].x), tie.end.x) and is_equal_approx(shirt[0][2].y, tie.position.y), "%s: the collar's arms end exactly on the tie" % name)
+
+
 # Weak references to the view's generated sounds, made here so that no stack
 # slot of the caller keeps a sound alive.
 func _weak_streams(view) -> Array:
@@ -411,6 +525,9 @@ func _run() -> void:
 	_test_plates_are_hit_areas()
 	_test_latest_utterance_only()
 	_test_inspection_presentation()
+	_test_legend_alignment()
+	_test_socket_wire_crossing()
+	_test_foreman_alignment()
 	var bell_references := View.LESSON1_BELL.get_reference_count()
 	var view := View.new()
 	root.add_child(view)

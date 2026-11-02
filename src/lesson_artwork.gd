@@ -394,12 +394,15 @@ func _wire(center: Vector2, component: int, dashed: bool) -> void:
 	var y0: float = band[0].y
 	var dx := 1.0 if component == 1 else -1.0
 	var segments := [[0, 2], [4, 6], [8, 10], [12, 14]] if dashed else [[0, 14]]
+	# The bands' centre lines run through the socket's centre and the tips'
+	# centres, so red and blue cross exactly at the centre.
+	var bx := x0 - 0.5 * dx
 	# Ink casing, colour core and a light centre line (visible to protan eyes).
 	for segment in segments:
-		_diag(x0 + segment[0] * dx - 2, y0 + segment[0], segment[1] - segment[0], dx, INK, 5)
+		_diag(bx + segment[0] * dx - 2, y0 + segment[0], segment[1] - segment[0], dx, INK, 5)
 	for segment in segments:
-		_diag(x0 + segment[0] * dx - 1, y0 + segment[0], segment[1] - segment[0], dx, f.base, 3)
-		_diag(x0 + segment[0] * dx, y0 + segment[0], segment[1] - segment[0], dx, f.hi, 1)
+		_diag(bx + segment[0] * dx - 1, y0 + segment[0], segment[1] - segment[0], dx, f.base, 3)
+		_diag(bx + segment[0] * dx, y0 + segment[0], segment[1] - segment[0], dx, f.hi, 1)
 	if not dashed:
 		for tip in [Vector2(x0, y0), Vector2(x0 + (n - 1) * dx, y0 + n - 1)]:
 			_plate(tip.x - 2, tip.y - 2, 5, 5, 1, f.hi)
@@ -535,6 +538,10 @@ func _badge(x: float, y: float, count: int, face: Color) -> void:
 	_text(str(count), x * U, (y - 4.6) * U, INK, "center")
 
 
+# Each socket's plate spans x - 7 .. x + 8, so its centre is (x + 0.5, y + 0.5):
+# the two dots sit symmetrically about it, red "\" and blue "/" are equal
+# bands that cross exactly there, and each chevron is two equal arms joined
+# at its point, centred in the gap to the next socket.
 func _legend(y: float) -> void:
 	var xs := [61.0, 83.0, 105.0, 127.0]
 	for i in 4:
@@ -543,14 +550,15 @@ func _legend(y: float) -> void:
 		_cham(x - 4, y - 4, 9, 9, 2, GROUT)
 		if i == 0:
 			_rect(x - 3, y, 1, 1, NIGHT5)
-			_rect(x + 2, y, 1, 1, NIGHT5)
+			_rect(x + 3, y, 1, 1, NIGHT5)
 		if i & 1:
-			_diag(x - 3, y - 3, 7, 1, RED, 2)
+			_diag(x - 3.5, y - 2.5, 6, 1, RED, 2)
 		if i & 2:
-			_diag(x + 2, y - 3, 7, -1, BLUE, 2)
+			_diag(x + 2.5, y - 2.5, 6, -1, BLUE, 2)
 		if i < 3:
-			_diag(x + 10, y - 2, 3, 1, MIST)
-			_diag(x + 11, y + 1, 2, -1, MIST)
+			# The arms meet on x + 12.25 .. x + 13.25; the chevron spans x + 9.75 .. x + 13.25, centred in the 8 .. 15 gap.
+			_diag(x + 9.75, y - 2, 2.5, 1, MIST)
+			_diag(x + 12.25, y + 0.5, 2.5, -1, MIST)
 
 
 # ---- chrome ----------------------------------------------------------------
@@ -657,8 +665,10 @@ func _foreman(fx: float, fy0: float, p: Dictionary) -> void:
 	var Y := fy0 + bob + hop
 	_plate(X + 6, Y + 38, 36, 18 - bob - hop, 6, VEST)
 	_rect(X + 9, Y + 40, 2, 14, Color("#a8471a"))
+	# The face and the shirt are symmetric about X + 24 (the head's centre);
+	# the collar's arms end exactly on the tie.
 	_diag(X + 18, Y + 39, 6, 1, SHIRT, 2)
-	_diag(X + 29, Y + 39, 6, -1, SHIRT, 2)
+	_diag(X + 28, Y + 39, 6, -1, SHIRT, 2)
 	_rect(X + 22, Y + 45, 4, 9, SHIRT)
 	_rect(X + 14, Y + 41, 2, 14, GOLD_HI)
 	_rect(X + 32, Y + 41, 2, 14, GOLD_HI)
@@ -676,38 +686,39 @@ func _foreman(fx: float, fy0: float, p: Dictionary) -> void:
 	_plate(X + 10, Y + 12, 28, 25, 6, SKIN)
 	_rect(X + 34, Y + 18, 2, 14, SKIN_LO)
 	_plate(X + 9, Y + 1, 30, 15, 8, GOLD)
-	_rect(X + 23, Y + 2, 3, 12, GOLD_LO)
+	_rect(X + 22.5, Y + 2, 3, 12, GOLD_LO)
 	_diag(X + 13, Y + 6, 4, -1, GOLD_HI, 2)
 	_rect(X + 17, Y + 3, 4, 1, GOLD_HI)
 	_plate(X + 5, Y + 13, 38, 4, 1, GOLD_LO)
 	_rect(X + 6, Y + 14, 36, 1, GOLD)
 	match String(p.brows):
 		"worry":
-			_diag(X + 19, Y + 18, 4, -1, HAIR, 2)
-			_diag(X + 28, Y + 18, 4, 1, HAIR, 2)
+			_diag(X + 18.5, Y + 18, 4, -1, HAIR, 2)
+			_diag(X + 27.5, Y + 18, 4, 1, HAIR, 2)
 		"up":
-			_rect(X + 15, Y + 18, 5, 1, HAIR)
-			_rect(X + 29, Y + 18, 5, 1, HAIR)
+			_rect(X + 14.5, Y + 18, 5, 1, HAIR)
+			_rect(X + 28.5, Y + 18, 5, 1, HAIR)
 		_:
-			_rect(X + 15, Y + 19, 5, 1, HAIR)
-			_rect(X + 29, Y + 19, 5, 1, HAIR)
+			_rect(X + 14.5, Y + 19, 5, 1, HAIR)
+			_rect(X + 28.5, Y + 19, 5, 1, HAIR)
+	# Eyes are centred on X + 17 and X + 31 in every pose.
 	if p.mouth == "smile" and not p.blink:
-		for ex in [15.0, 30.0]:
-			_diag(X + ex, Y + 23, 3, -1, INK)
+		# Closed happy eyes: one "^" each, its two arms joined at the top.
+		for ex in [16.0, 30.0]:
+			_diag(X + ex, Y + 21, 3, -1, INK)
 			_diag(X + ex + 1, Y + 21, 3, 1, INK)
-			_rect(X + ex - 1, Y + 23, 1, 1, INK)
 	elif p.blink:
 		_rect(X + 15, Y + 23, 4, 1, INK)
 		_rect(X + 29, Y + 23, 4, 1, INK)
 	else:
-		_rect(X + 16, Y + 21, 3, 4, INK)
-		_rect(X + 30, Y + 21, 3, 4, INK)
-		_rect(X + 16, Y + 21, 1, 1, WHITE)
-		_rect(X + 30, Y + 21, 1, 1, WHITE)
+		_rect(X + 15.5, Y + 21, 3, 4, INK)
+		_rect(X + 29.5, Y + 21, 3, 4, INK)
+		_rect(X + 15.5, Y + 21, 1, 1, WHITE)
+		_rect(X + 29.5, Y + 21, 1, 1, WHITE)
 	if p.mouth == "smile":
 		_rect(X + 12, Y + 26, 3, 2, CHEEK)
 		_rect(X + 33, Y + 26, 3, 2, CHEEK)
-	_rect(X + 23, Y + 23, 3, 4, SKIN_LO)
+	_rect(X + 22.5, Y + 23, 3, 4, SKIN_LO)
 	_cham(X + 15, Y + 27, 18, 4, 2, HAIR)
 	_rect(X + 14, Y + 30, 2, 2, HAIR)
 	_rect(X + 32, Y + 30, 2, 2, HAIR)
