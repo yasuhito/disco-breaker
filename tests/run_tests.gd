@@ -48,6 +48,7 @@ func _init() -> void:
 	_test_reward_events()
 	_test_unsafe_rewards_and_retry()
 	_test_reward_audio()
+	_test_lesson1_success_sound()
 	_test_leak_events()
 	_test_residual_routes()
 	_test_original_fault_xor()
@@ -55,7 +56,7 @@ func _init() -> void:
 	_test_electrical_sounds()
 	_test_color_families_and_wire_directions()
 	if failures.is_empty():
-		print("PASS: 31 tutorial tests")
+		print("PASS: 32 tutorial tests")
 		quit(0)
 	else:
 		for failure in failures:
@@ -315,7 +316,7 @@ func _test_latest_utterance() -> void:
 	model.tap_node(0, 0)
 	_expect(model.utterance().text == Tutorial.LIT_HINTS.red_one_tap, "the centre hint returns once it describes the board")
 	model.tap_node(1, 1)
-	_expect(model.utterance() == {"kind": "safe", "text": "いいぞ！ 点滅が消えた。"}, "a pass replaces the hint")
+	_expect(model.utterance() == {"kind": "safe", "text": "いいぞ！\n赤い床のちらつきが\n直ったね！"}, "a pass replaces the hint with the approved praise")
 	model.next_stage()
 	_expect(model.utterance().kind == "start" and model.utterance().text.begins_with("中央を2回"), "the next lesson replaces the praise")
 	model.tap_node(1, 1)
@@ -708,6 +709,33 @@ func _test_reward_audio() -> void:
 		_expect(not Rewards.wants_sound(event, true), "mute suppresses every reward sound")
 		_expect(not Rewards.wants_sound(event, false, true), "master mute is respected")
 		_expect(Rewards.wants_sound(event, false) == (event in ["success", "finale"]), "sound requires a verified success event")
+
+
+# Lesson 1's approved bell: chosen only for its verified success, and the
+# bundled file is the generated audition sample, imported uncompressed.
+func _test_lesson1_success_sound() -> void:
+	_expect(Rewards.sound_for("success", "red_one_tap") == "lesson1_bell", "lesson 1 success plays its bell")
+	for id in ["blue_two_taps", "combined_three_taps", "foreman_inspection", "crossing_trap", "boundary_single"]:
+		_expect(Rewards.sound_for("success", id) == "sting", "other lessons keep the default sting: %s" % id)
+	_expect(Rewards.sound_for("finale", "graduation_3x3") == "finale", "the final practice keeps its finale")
+	for event in ["", "settled", "reset"]:
+		_expect(Rewards.sound_for(event, "red_one_tap").is_empty(), "no sound without a verified success: %s" % event)
+	var raw := FileAccess.get_file_as_bytes("res://assets/sounds/lesson1_success_bell.wav")
+	var hash := HashingContext.new()
+	hash.start(HashingContext.HASH_SHA256)
+	hash.update(raw)
+	_expect(hash.finish().hex_encode() == "335f67f085799e8246fb18ae7dd7eb64cefeb2234fc68586acae61bb181da547", "the bundled bell is the chosen audition sample A")
+	var stream: AudioStreamWAV = load("res://assets/sounds/lesson1_success_bell.wav")
+	_expect(stream.format == AudioStreamWAV.FORMAT_16_BITS and stream.mix_rate == 48000 and not stream.stereo and stream.loop_mode == AudioStreamWAV.LOOP_DISABLED, "the bell imports as 48 kHz 16-bit mono, not looped")
+	_expect(stream.data == raw.slice(44), "the imported bell plays the generated PCM unchanged")
+	# A lesson 1 board that is dark but leaking never passes, so it never rings.
+	var model := Tutorial.new()
+	var rewards := Rewards.new()
+	rewards.observe(model.semantic_state())
+	model.tap_node(0, 1)
+	rewards.observe(model.semantic_state())
+	model.tap_node(2, 1)
+	_expect(rewards.observe(model.semantic_state()) == "settled" and rewards.success_count == 0, "an unsafe dark lesson 1 has no success sound")
 
 
 func _test_leak_events() -> void:

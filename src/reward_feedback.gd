@@ -34,5 +34,16 @@ func observe(state: Dictionary) -> String:
 	return kind
 
 
+# Which sting a verified success plays: lesson 1 has its own approved bell
+# (assets/sounds/lesson1_success_bell.wav); the final practice keeps the
+# longer finale and every other lesson the default sting.
+static func sound_for(event: String, stage_id: String) -> String:
+	if event == "finale":
+		return "finale"
+	if event == "success":
+		return "lesson1_bell" if stage_id == "red_one_tap" else "sting"
+	return ""
+
+
 static func wants_sound(event: String, muted: bool, master_muted: bool = false) -> bool:
 	return event in ["success", "finale"] and not muted and not master_muted

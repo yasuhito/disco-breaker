@@ -101,7 +101,9 @@ try {
   await box(7, 3);
   await box(4);
   await assertState("state.passed && state.can_continue && state.inspection.safe", "stage1 solve is logically safe");
-  if ((await page.evaluate(() => window.discoBreakerFeedback)).success_count !== 1) throw new Error("stage1 reward must fire once");
+  const firstReward = await page.evaluate(() => window.discoBreakerFeedback);
+  if (firstReward.success_count !== 1 || firstReward.sound_starts !== 1 || firstReward.last_reward_sound !== "lesson1_bell") throw new Error(`stage1 must ring its bell once: ${JSON.stringify(firstReward)}`);
+  await assertState("state.utterance.text === 'いいぞ！\\n赤い床のちらつきが\\n直ったね！'", "stage1 praise is the approved line");
   await captureState("stage1-pass");
   await bottom();
 
@@ -109,6 +111,7 @@ try {
   await cycleGrid3x3("stage2");
   await box(4, 2);
   await assertState("state.floor_dark && state.passed", "stage2 solve darkens the floor");
+  if ((await page.evaluate(() => window.discoBreakerFeedback)).last_reward_sound !== "sting") throw new Error("stage2 keeps the default sting");
   await captureState("stage2-pass");
   await bottom();
 

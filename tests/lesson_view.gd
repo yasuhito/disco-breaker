@@ -349,6 +349,54 @@ func _test_counting(view) -> void:
 	_expect(not view.semantic_state().counting and view._leak_age == 0.0, "the trap's leak is explained at once, as before")
 
 
+# Lesson 1 rings its approved bell once per real pass; other lessons keep
+# the default sting; mute, leaks, redraws and resume never ring it.
+func _test_lesson1_bell(view) -> void:
+	view.reduced_motion = true
+	view._muted = false
+	var reset := func(stage: int) -> void:
+		view.model.stage_index = stage
+		view.model.boundary_phase = 0
+		view.model._reset_stage()
+		view.model._record("next_stage", {})
+		view._navigation_guard_until = 0
+		view._publish_semantics()
+	reset.call(0)
+	var starts: int = view._sound_starts
+	view._handle_design_tap(Lesson.socket_center(1) * 2.0)
+	view._publish_semantics()
+	view._handle_design_tap(Lesson.socket_center(7) * 2.0)
+	view._publish_semantics()
+	_expect(view.model.utterance().kind == "unsafe" and view._sound_starts == starts, "an unsafe dark lesson 1 rings nothing")
+	reset.call(0)
+	view._handle_design_tap(Lesson.socket_center(4) * 2.0)
+	view._publish_semantics()
+	_expect(view._sound_starts == starts + 1 and view._last_reward_sound == "lesson1_bell" and view._audio.stream == View.LESSON1_BELL, "lesson 1's pass rings the bell once")
+	_expect(view.model.utterance().text == "いいぞ！\n赤い床のちらつきが\n直ったね！", "with the approved praise")
+	view._publish_semantics()
+	view.queue_redraw()
+	view._show_title()
+	view._publish_semantics()
+	view._navigation_guard_until = 0
+	view._open_tutorial()
+	view._publish_semantics()
+	_expect(view._sound_starts == starts + 1, "redraws and resume never ring it again")
+	view._navigation_guard_until = 0
+	view._handle_design_tap(View.PRIMARY_RECT.get_center())
+	view._publish_semantics()
+	view._handle_design_tap(Lesson.socket_center(4) * 2.0)
+	view._handle_design_tap(Lesson.socket_center(4) * 2.0)
+	view._publish_semantics()
+	_expect(view.model.definition().id == "blue_two_taps" and view.model.passed(), "fixture: lesson 2 passed")
+	_expect(view._sound_starts == starts + 2 and view._last_reward_sound == "sting" and view._audio.stream == view._sting, "lesson 2 keeps the default sting")
+	view._muted = true
+	reset.call(0)
+	view._handle_design_tap(Lesson.socket_center(4) * 2.0)
+	view._publish_semantics()
+	_expect(view.model.passed() and view._sound_starts == starts + 2, "a muted pass rings nothing")
+	view._muted = false
+
+
 func _run() -> void:
 	_test_angular_geometry()
 	_test_plates_are_hit_areas()
@@ -418,6 +466,7 @@ func _run() -> void:
 	view._publish_semantics()
 	_expect(not view.model.passed() and view._leaks.active, "calling again on the same leaking board does nothing")
 	_test_counting(view)
+	_test_lesson1_bell(view)
 	view._audio.stop()
 	view._lamp_audio.stop()
 	view.queue_free()

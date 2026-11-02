@@ -10,6 +10,8 @@ const Sounds := preload("res://src/reward_sound.gd")
 const Flicker := preload("res://src/fault_flicker.gd")
 const FONT := preload("res://assets/fonts/NotoSansJP-Regular.otf")
 const BOLD_FONT := preload("res://assets/fonts/NotoSansJP-Bold.tres")
+# Original synthesized bell chosen for lesson 1 (provenance: assets/sounds/README.md).
+const LESSON1_BELL := preload("res://assets/sounds/lesson1_success_bell.wav")
 
 const DESIGN_SIZE := Vector2(390, 844)
 # Hit areas are the lesson's drawn plates (design px).
@@ -54,6 +56,7 @@ var _rewards := Rewards.new()
 var _audio := AudioStreamPlayer.new()
 var _sting: AudioStreamWAV
 var _final_sting: AudioStreamWAV
+var _last_reward_sound := ""
 var _muted := false
 var _sound_starts := 0
 var _leaks := Leaks.new()
@@ -138,7 +141,8 @@ func _finish_counting() -> void:
 
 func _play_reward(event: String) -> void:
 	if Rewards.wants_sound(event, _muted, AudioServer.is_bus_mute(0)):
-		_audio.stream = _final_sting if event == "finale" else _sting
+		_last_reward_sound = Rewards.sound_for(event, String(_definition.id))
+		_audio.stream = {"finale": _final_sting, "lesson1_bell": LESSON1_BELL}.get(_last_reward_sound, _sting)
 		_audio.play()
 		_sound_starts += 1
 
@@ -446,7 +450,7 @@ func _toggle_mute() -> void:
 func _publish_feedback() -> void:
 	if OS.has_feature("web"):
 		var feedback := {"kind": _rewards.kind, "event_count": _rewards.event_count,
-			"success_count": _rewards.success_count, "sound_starts": _sound_starts,
+			"success_count": _rewards.success_count, "sound_starts": _sound_starts, "last_reward_sound": _last_reward_sound,
 			"muted": _muted, "reduced_motion": reduced_motion,
 			"leak_active": _leaks.active and not at_title, "leak_events": _leaks.event_count,
 			"leak_sound_starts": _leak_sound_starts, "lamp_sound_starts": _lamp_sound_starts,
