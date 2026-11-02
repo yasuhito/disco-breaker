@@ -128,6 +128,14 @@ func _test_title_press(view) -> void:
 	var sounds: int = view._press_sound_starts
 	var rewards: int = view._sound_starts
 	_expect(view.at_title and view._title_press() == 0.0, "the title plate is at rest before a press")
+	# The press alone is 4 dB louder; every other player keeps its level, and
+	# the sample's peak stays far from clipping at that gain.
+	_expect(view._press_audio.volume_db == -4.0 and view._audio.volume_db == -8.0 and view._lamp_audio.volume_db == -24.0, "only the title press plays 4 dB louder")
+	var pcm: PackedByteArray = View.TITLE_PRESS.data
+	var peak := 0
+	for frame in pcm.size() / 2:
+		peak = maxi(peak, absi(pcm.decode_s16(frame * 2)))
+	_expect(peak == 17639 and peak / 32768.0 * db_to_linear(view._press_audio.volume_db) < 0.5, "the press peaks near -9.4 dBFS after its gain, with no clipping")
 	var clicked := Time.get_ticks_msec()
 	view._handle_design_tap(plate.get_center())
 	_expect(view.at_title and view._title_presses == presses + 1 and view._press_sound_starts == sounds + 1 and view._press_audio.playing, "an accepted press plays the chosen sound once and stays on the title while the plate moves")

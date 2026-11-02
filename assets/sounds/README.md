@@ -15,3 +15,4 @@
 - SHA-256: `4d294a4c23eaa16c8c0ce12b74f7f682d936771ca530ca19d4bdbd037661636e`
 - Reproduce: `cd tools/button_sound && python3 generate.py` (Python standard library only) writes the three candidates; `A_koto.wav` is byte-identical to this file. Do not edit the WAV by hand.
 - Import: `compress/mode=0`, as for the bell; `tests/run_tests.gd` checks the hash and the imported data.
+- Level: its player is at -4 dB, 4 dB above the other sounds' -8 dB (the human found it too quiet at -8 dB on 2026-11-02); the file itself is unchanged. With the -5.4 dBFS sample peak it peaks at about -9.4 dBFS.

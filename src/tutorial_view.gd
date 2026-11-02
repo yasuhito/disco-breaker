@@ -96,7 +96,8 @@ func _ready() -> void:
 	add_child(_lamp_audio)
 	_audio.volume_db = -8.0
 	add_child(_audio)
-	_press_audio.volume_db = -8.0
+	# 4 dB above the other sounds: the short press was too quiet at -8 dB.
+	_press_audio.volume_db = -4.0
 	_press_audio.stream = TITLE_PRESS
 	add_child(_press_audio)
 	var preferences := ConfigFile.new()
