@@ -22,6 +22,13 @@ async function tap(page, x, y, wait = 110) {
   await page.mouse.click((width-390*scale)/2+x*scale, (height-844*scale)/2+y*scale);
   await page.waitForTimeout(wait);
 }
+// The title press dips for 0.15 s before the lesson opens, and the lesson's
+// 280 ms input guard counts from that entry: wait for both before acting.
+async function enter(page, x = 195, y = 775) {
+  await tap(page, x, y);
+  await page.waitForFunction(() => window.discoBreakerState?.screen === 'tutorial');
+  await page.waitForTimeout(350);
+}
 const state = p => p.evaluate(() => window.discoBreakerState);
 const feedback = p => p.evaluate(() => window.discoBreakerFeedback);
 let tutorialButton;
@@ -92,7 +99,8 @@ try {
   assert.equal((await state(page)).dialogue_visible, undefined, 'no dialogue gate');
   assert.equal((await feedback(page)).title_presses, 1, 'a rapid second click is not a second press');
   assert.equal((await feedback(page)).title_press_sound_starts, 1, 'the accepted press plays its sound once');
-  await page.waitForTimeout(300);
+  await page.waitForFunction(() => window.discoBreakerState?.screen === 'tutorial');
+  await page.waitForTimeout(350);
   await page.screenshot({path:`${out}/tutorial-start-390x844.png`});
   await tap(page,102,304);
   const playing = await state(page);
@@ -104,7 +112,7 @@ try {
   const count = (await feedback(page)).lamp_sound_starts;
   await page.waitForTimeout(700);
   assert.equal((await feedback(page)).lamp_sound_starts,count,'no tutorial lamp sound on title');
-  await tap(page,195,775,350);
+  await enter(page);
   const resumed = await state(page);
   assert.deepEqual(resumed, playing, 'continue preserves entire semantic state');
   assert.equal((await feedback(page)).title_press_sound_starts, 2, 'resuming presses the plate with its sound');
@@ -114,7 +122,7 @@ try {
   const solved = await feedback(page);
   assert.equal(solved.success_count,1);
   await tap(page,38,36,350);
-  await tap(page,195,775,350);
+  await enter(page);
   assert.equal((await feedback(page)).sound_starts,solved.sound_starts);
   assert.equal((await state(page)).can_continue,true,'a resumed pass keeps Continue');
   await tap(page,194,760); // next
@@ -131,7 +139,7 @@ try {
   await tap(page,38,36,350);
   assert.equal((await feedback(page)).leak_active,false);
   assert.deepEqual((await feedback(page)).revealed_hidden,{});
-  await tap(page,195,775,350);
+  await enter(page);
   assert.equal((await feedback(page)).leak_active,true);
   assert.equal((await feedback(page)).leak_sound_starts,leakCount);
   for(let i=0;i<3;i++) await tap(page,194,304);
@@ -153,7 +161,7 @@ try {
   await captureTitle(page, 'completed');
   await page.screenshot({path:`${out}/title-after-completion.png`});
   const beforeReplay = (await feedback(page)).title_press_sound_starts;
-  await tap(page,195,775,350); // replay
+  await enter(page); // replay
   assert.equal((await feedback(page)).title_press_sound_starts, beforeReplay + 1, 'replay from the title presses with its sound');
   assert.equal((await state(page)).stage,1);
   assert.equal((await state(page)).last_action.action,'restart');
@@ -165,7 +173,7 @@ try {
   await tap(page,325,36);
   assert.equal((await feedback(page)).muted,true);
   const mutedPresses = await feedback(page);
-  await tap(page,195,775,350);
+  await enter(page);
   assert.equal((await feedback(page)).title_presses, mutedPresses.title_presses + 1, 'a muted press still opens the lesson');
   assert.equal((await feedback(page)).title_press_sound_starts, mutedPresses.title_press_sound_starts, 'mute silences the press');
   await tap(page,194,396);
@@ -183,7 +191,7 @@ try {
   assert.equal((await feedback(quiet)).lamp_sound_starts,0);
   await captureAudioToggle(quiet, 'title');
   assert.equal((await feedback(quiet)).title_press_sound_starts, 0, 'the audio plate is not the tutorial press');
-  await tap(quiet,195,775,350);
+  await enter(quiet);
   assert.equal((await state(quiet)).screen, 'tutorial');
   assert.equal((await feedback(quiet)).title_press_sound_starts, 1, 'reduced motion keeps the press sound');
   await captureAudioToggle(quiet, 'tutorial');
@@ -209,7 +217,7 @@ try {
     await tap(mobile,195,814,350);
     await tap(mobile,26,780,350);
     assert.equal((await state(mobile)).screen,'title','taps beside the tutorial plate are ignored');
-    await tap(mobile,195,809,350);
+    await enter(mobile,195,809);
     assert.equal((await state(mobile)).screen,'tutorial');
     await tap(mobile,38,36,350);
     assert.equal((await state(mobile)).screen,'title');

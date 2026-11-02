@@ -51,6 +51,13 @@ async function clickCanvas(x, y, count = 1) {
   await page.waitForTimeout(150);
 }
 
+// The title press dips for 0.15 s before the lesson opens, and the lesson's
+// 280 ms input guard counts from that entry: wait for both before acting.
+async function waitForLessonEntry(target) {
+  await target.waitForFunction(() => window.discoBreakerState?.screen === "tutorial");
+  await target.waitForTimeout(350);
+}
+
 async function assertState(predicate, description) {
   const holds = await page.evaluate((predicateSource) => {
     // eslint-disable-next-line no-new-func
@@ -89,7 +96,7 @@ try {
   // Three rapid clicks on the tutorial plate: one press, one press sound,
   // and nothing reaches the first lesson.
   await clickCanvas(195, 775, 3);
-  await page.waitForTimeout(300);
+  await waitForLessonEntry(page);
   await assertState("state.screen === 'tutorial' && state.stage_id === 'red_one_tap' && state.schema === 'disco-breaker-tutorial-state.v2'", "tutorial opens on stage 1");
   await assertState("state.last_action.action === 'launch' && state.action_count === 1", "rapid title clicks never act on the first lesson");
   const pressFeedback = await page.evaluate(() => window.discoBreakerFeedback);
@@ -250,7 +257,7 @@ try {
   await page.goto(baseUrl);
   await page.waitForTimeout(4000);
   await clickCanvas(195, 775);
-  await page.waitForTimeout(300);
+  await waitForLessonEntry(page);
   await assertState("state.stage_id === 'red_one_tap'", "optional skip run opens on stage 1");
   await box(4);
   await bottom();
@@ -288,7 +295,7 @@ try {
   const touch = async (x, y) => { await touchPage.touchscreen.tap(x, y); await touchPage.waitForTimeout(100); };
   await touchPage.touchscreen.tap(195, 775);
   await touch(195, 775);
-  await touchPage.waitForTimeout(300);
+  await waitForLessonEntry(touchPage);
   const touchPress = await touchPage.evaluate(() => ({ state: window.discoBreakerState, feedback: window.discoBreakerFeedback }));
   if (touchPress.state.screen !== "tutorial" || touchPress.state.action_count !== 1 || touchPress.feedback.title_presses !== 1 || touchPress.feedback.title_press_sound_starts !== 1) throw new Error(`a rapid double touch is one title press: ${JSON.stringify(touchPress)}`);
   const initialCount = await touchPage.evaluate(() => window.discoBreakerState.action_count);

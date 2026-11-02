@@ -73,6 +73,13 @@ click_canvas() {
   record_action "$action"
 }
 
+# The title press dips for 0.15 s before the lesson opens, and the lesson's
+# 280 ms input guard counts from that entry: wait (in the page, at most 3 s)
+# for both before acting.
+wait_for_lesson_entry() {
+  chrome-devtools-axi eval "async () => { const until = performance.now() + 3000; while (window.discoBreakerState?.screen !== 'tutorial') { if (performance.now() > until) throw new Error('lesson did not open'); await new Promise(resolve => setTimeout(resolve, 20)); } await new Promise(resolve => setTimeout(resolve, 350)); return true; }" >/dev/null
+}
+
 assert_state() {
   local expression="$1"
   chrome-devtools-axi eval "() => { if (!(${expression})) throw new Error('state assertion failed'); return JSON.stringify(window.discoBreakerState); }" >/dev/null
@@ -102,7 +109,7 @@ assert_state "${F}.title_presses === 0 && ${F}.title_press_sound_starts === 0"
 # Three rapid clicks on the tutorial plate: one press, one press sound, and
 # nothing reaches the first lesson.
 click_canvas 195 775 title-enter-tutorial 3
-sleep 0.3
+wait_for_lesson_entry
 assert_state "${S}.screen === 'tutorial' && ${S}.stage_id === 'red_one_tap' && ${S}.schema === 'disco-breaker-tutorial-state.v2'"
 assert_state "${S}.last_action.action === 'launch' && ${S}.action_count === 1"
 assert_state "${F}.title_presses === 1 && ${F}.title_press_sound_starts === 1 && !${F}.title_pressing && ${F}.sound_starts === 0"
@@ -261,7 +268,7 @@ run_name="optional-skip"
 chrome-devtools-axi open http://127.0.0.1:8877/index.html >/dev/null
 sleep 4
 click_canvas 195 775 skip-run-title-enter
-sleep 0.3
+wait_for_lesson_entry
 click_canvas 194 396 skip-run-stage1-solve
 click_canvas 194 760 skip-run-stage1-continue
 click_canvas 194 396 skip-run-stage2-solve 2
