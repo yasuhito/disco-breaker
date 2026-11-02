@@ -166,8 +166,10 @@ assert_state "${S}.can_call_foreman"
 click_canvas 194 304 stage4-leak-top-red
 click_canvas 194 396 stage4-leak-center-blue 3
 click_canvas 194 488 stage4-leak-bottom-red
-click_canvas 194 760 stage4-call-unsafe
-assert_state "${S}.floor_dark && !${S}.inspection.safe && !${S}.can_continue && !${S}.can_call_foreman && ${S}.counting"
+# The count lasts 1.6 s; check it in the same browser step as the call, as
+# separate commands can take longer than that on a loaded host.
+chrome-devtools-axi eval "async () => { const c=document.querySelector('canvas'); const r=c.getBoundingClientRect(); const e={bubbles:true,clientX:r.left+194,clientY:r.top+760,button:0}; c.dispatchEvent(new MouseEvent('mousedown',e)); c.dispatchEvent(new MouseEvent('mouseup',e)); await new Promise(resolve => setTimeout(resolve,200)); const s=window.discoBreakerState; if (!(s.floor_dark && !s.inspection.safe && !s.can_continue && !s.can_call_foreman && s.counting)) throw new Error('the foreman must count before his unsafe verdict'); return true; }" >/dev/null
+record_action stage4-call-unsafe
 capture_state 13 stage4-failed-inspection 4.0
 click_canvas 194 304 stage4-undo-top 3
 assert_state "${S}.stage === 4 && !${S}.inspected"
