@@ -55,6 +55,8 @@ record_action() {
 capture_state() {
   local sequence="$1"
   local name="$2"
+  # Let the foreman finish speaking and an inspection presentation settle (~2 s).
+  sleep "${3:-0.9}"
   local path="artifacts/tutorial-audit-${sequence}-${name}.png"
   chrome-devtools-axi screenshot "$path" >/dev/null
   captures+=("$path")
@@ -78,8 +80,8 @@ assert_state() {
 
 cycle_grid_3x3() {
   local stage="$1"
-  local xs=(100 195 290)
-  local ys=(214 309 404)
+  local xs=(102 194 286)
+  local ys=(304 396 488)
   for row in 0 1 2; do
     for column in 0 1 2; do
       if [[ "$stage" != "stage4" && "$stage" != "stage7" && "$row" == "1" && "$column" == "1" ]]; then
@@ -90,127 +92,157 @@ cycle_grid_3x3() {
   done
 }
 
-assert_state "window.discoBreakerState.screen === 'title' && !window.discoBreakerState.campaign_available"
+# Lesson layout (390 x 844): connection boxes at x 102/194/286, y 304/396/488;
+# the bottom button (Continue / call the foreman / Replay) at 194,760; the
+# optional skip (and Back to title) at 194,668; home at 34,34.
+S="window.discoBreakerState"
+assert_state "${S}.screen === 'title' && !${S}.campaign_available"
 click_canvas 195 775 title-enter-tutorial
 sleep 0.3
-assert_state "window.discoBreakerState.screen === 'tutorial' && window.discoBreakerState.stage_id === 'red_one_tap'"
-capture_state 01 stage1-intro-dialogue
+assert_state "${S}.screen === 'tutorial' && ${S}.stage_id === 'red_one_tap' && ${S}.schema === 'disco-breaker-tutorial-state.v2'"
+assert_state "!('dialogue_visible' in ${S}) && ${S}.utterance.kind === 'start' && !${S}.can_continue"
+capture_state 01 stage1-start
 chrome-devtools-axi screenshot artifacts/tutorial-stage-1.png >/dev/null
-click_canvas 195 793 stage1-confirm-dialogue
-capture_state 02 stage1-pre-action
+click_canvas 194 760 stage1-disabled-continue
+assert_state "${S}.stage === 1 && ${S}.last_action.action === 'launch'"
 cycle_grid_3x3 stage1
-assert_state "window.discoBreakerState.corrections.every(value => value === 0)"
-click_canvas 195 309 stage1-target-red
-assert_state "window.discoBreakerState.result_visible"
-capture_state 03 stage1-success
-click_canvas 195 793 stage1-next
+assert_state "${S}.corrections.every(value => value === 0) && ${S}.utterance.kind === 'mistake'"
+capture_state 02 stage1-mistake
+click_canvas 194 304 stage1-leak-top
+click_canvas 194 488 stage1-leak-bottom
+assert_state "${S}.floor_dark && ${S}.inspected && ${S}.inspection.red_crossing && !${S}.can_continue && ${S}.utterance.kind === 'unsafe'"
+capture_state 03 stage1-dark-leak 2.3
+click_canvas 194 760 stage1-leak-continue-disabled
+assert_state "${S}.stage === 1 && ${S}.last_action.action === 'inspect'"
+click_canvas 194 304 stage1-undo-top 3
+click_canvas 194 488 stage1-undo-bottom 3
+click_canvas 194 396 stage1-target-red
+assert_state "${S}.passed && ${S}.can_continue && ${S}.inspection.safe && ${S}.last_action.payload.auto"
+capture_state 04 stage1-pass
+click_canvas 194 760 stage1-continue
 
-capture_state 04 stage2-intro-dialogue
-click_canvas 195 793 stage2-confirm-dialogue
-capture_state 05 stage2-pre-action
+assert_state "${S}.stage_id === 'blue_two_taps' && ${S}.utterance.kind === 'start'"
+capture_state 05 stage2-start
 cycle_grid_3x3 stage2
-assert_state "window.discoBreakerState.corrections.every(value => value === 0)"
-click_canvas 195 309 stage2-cycle-red
+assert_state "${S}.corrections.every(value => value === 0)"
+click_canvas 194 396 stage2-cycle-red
+assert_state "!${S}.floor_dark && ${S}.utterance.text.startsWith('赤になった')"
 capture_state 06 stage2-intermediate-red
-click_canvas 195 309 stage2-cycle-blue
-assert_state "window.discoBreakerState.floor_dark"
-capture_state 07 stage2-success-blue
-click_canvas 195 793 stage2-next
+click_canvas 194 396 stage2-cycle-blue
+assert_state "${S}.floor_dark && ${S}.passed"
+capture_state 07 stage2-pass
+click_canvas 194 760 stage2-continue
 
-capture_state 08 stage3-intro-dialogue
+capture_state 08 stage3-start
 chrome-devtools-axi screenshot artifacts/tutorial-dialogue-wrap.png >/dev/null
-click_canvas 195 793 stage3-confirm-dialogue
-capture_state 09 stage3-pre-action
 cycle_grid_3x3 stage3
-assert_state "window.discoBreakerState.corrections.every(value => value === 0)"
-click_canvas 195 309 stage3-cycle-red
-capture_state 10 stage3-intermediate-red
-click_canvas 195 309 stage3-cycle-blue
-capture_state 11 stage3-intermediate-blue
-click_canvas 195 309 stage3-cycle-both
-capture_state 12 stage3-success-both
-click_canvas 195 793 stage3-next
+assert_state "${S}.corrections.every(value => value === 0)"
+click_canvas 194 396 stage3-cycle-red
+capture_state 09 stage3-intermediate-red
+click_canvas 194 396 stage3-cycle-blue
+capture_state 10 stage3-intermediate-blue
+click_canvas 194 396 stage3-cycle-both
+assert_state "${S}.passed"
+capture_state 11 stage3-pass
+click_canvas 194 760 stage3-continue
 
-capture_state 13 stage4-intro-dialogue
-click_canvas 195 793 stage4-confirm-dialogue
-assert_state "window.discoBreakerState.can_call_foreman"
-capture_state 14 stage4-inspection-ready
+assert_state "${S}.stage_id === 'foreman_inspection' && ${S}.inspection_mode === 'call' && ${S}.can_call_foreman"
+capture_state 12 stage4-start
 cycle_grid_3x3 stage4
-assert_state "window.discoBreakerState.can_call_foreman"
-click_canvas 195 214 stage4-leak-top-red
-click_canvas 195 309 stage4-leak-center-blue 3
-click_canvas 195 404 stage4-leak-bottom-red
-click_canvas 195 793 stage4-call-unsafe
-assert_state "window.discoBreakerState.floor_dark && !window.discoBreakerState.inspection.safe"
-capture_state 14a stage4-failed-inspection
-click_canvas 195 793 stage4-retry
-assert_state "!window.discoBreakerState.result_visible && window.discoBreakerState.stage === 4"
-capture_state 14b stage4-retry
-click_canvas 195 214 stage4-undo-top 3
-click_canvas 195 309 stage4-undo-center
-click_canvas 195 404 stage4-undo-bottom 3
-click_canvas 195 793 stage4-call-foreman
-assert_state "window.discoBreakerState.inspection.safe"
-capture_state 15 stage4-inspection-passed
+assert_state "${S}.can_call_foreman"
+click_canvas 194 304 stage4-leak-top-red
+click_canvas 194 396 stage4-leak-center-blue 3
+click_canvas 194 488 stage4-leak-bottom-red
+click_canvas 194 760 stage4-call-unsafe
+assert_state "${S}.floor_dark && !${S}.inspection.safe && !${S}.can_continue && !${S}.can_call_foreman"
+capture_state 13 stage4-failed-inspection 2.3
+click_canvas 194 304 stage4-undo-top 3
+assert_state "${S}.stage === 4 && !${S}.inspected"
+click_canvas 194 396 stage4-undo-center
+click_canvas 194 488 stage4-undo-bottom 3
+click_canvas 194 760 stage4-call-foreman
+assert_state "${S}.inspection.safe && ${S}.passed"
+capture_state 14 stage4-inspection-passed
 chrome-devtools-axi screenshot artifacts/tutorial-inspection-dialogue.png >/dev/null
-click_canvas 195 793 stage4-next
+click_canvas 194 760 stage4-continue
 
-capture_state 16 stage5-intro-dialogue
-click_canvas 195 793 stage5-confirm-and-inspect
-assert_state "window.discoBreakerState.inspection.red_crossing && !window.discoBreakerState.inspection.blue_crossing"
-capture_state 17 stage5-failure-witness
+assert_state "${S}.stage_id === 'crossing_trap' && ${S}.floor_dark && ${S}.can_call_foreman && !${S}.fault_revealed"
+capture_state 15 stage5-start
+click_canvas 194 760 stage5-call-trap
+assert_state "${S}.inspection.red_crossing && !${S}.inspection.blue_crossing && !${S}.passed && !${S}.can_continue && ${S}.fault_revealed"
+assert_state "${S}.utterance.text.startsWith('漏電あり！床は2本で暗い。')"
+assert_state "document.getElementById('disco-breaker-live').textContent.includes('漏電あり！床は2本で暗い。')"
+capture_state 16 stage5-leak-explained 2.3
 chrome-devtools-axi screenshot artifacts/tutorial-crossing-trap.png >/dev/null
-click_canvas 195 793 stage5-next
+click_canvas 194 760 stage5-no-continue-after-leak
+assert_state "${S}.stage === 5 && ${S}.last_action.action === 'inspect'"
+click_canvas 194 304 stage5-repair-top 3
+assert_state "!${S}.floor_dark && ${S}.fault_revealed && ${S}.utterance.text.includes('破線')"
+capture_state 17 stage5-repair-lit
+click_canvas 194 488 stage5-repair-bottom 3
+click_canvas 194 396 stage5-repair-center
+assert_state "${S}.floor_dark && ${S}.can_call_foreman && ${S}.utterance.kind === 'ready'"
+capture_state 18 stage5-repair-dark
+click_canvas 194 760 stage5-call-repaired
+assert_state "${S}.passed && ${S}.can_continue"
+capture_state 19 stage5-pass
+click_canvas 194 760 stage5-continue
 
-assert_state "window.discoBreakerState.stage === 6 && window.discoBreakerState.stage_count === 7 && window.discoBreakerState.lit_red.length === 1 && window.discoBreakerState.lit_blue.length === 0"
-capture_state 17a stage6-red-intro
-click_canvas 195 793 stage6-red-confirm
-capture_state 17b stage6-red-ready
-click_canvas 100 214 stage6-red-edge
-assert_state "window.discoBreakerState.floor_dark && window.discoBreakerState.inspection.safe"
-capture_state 17c stage6-red-cleared
-click_canvas 195 793 stage6-try-blue
-assert_state "window.discoBreakerState.stage === 6 && window.discoBreakerState.boundary_phase === 1 && window.discoBreakerState.lit_blue.length === 1 && window.discoBreakerState.lit_red.length === 0"
-capture_state 17d stage6-blue-intro
-click_canvas 195 793 stage6-blue-confirm
-capture_state 17e stage6-blue-ready
-click_canvas 290 214 stage6-blue-intermediate-red
-assert_state "!window.discoBreakerState.floor_dark && !window.discoBreakerState.result_visible"
-capture_state 17f stage6-blue-intermediate-red
-click_canvas 290 214 stage6-blue-edge
-assert_state "window.discoBreakerState.floor_dark && window.discoBreakerState.inspection.safe"
-capture_state 17g stage6-blue-cleared
-click_canvas 195 793 stage6-next
+assert_state "${S}.stage === 6 && ${S}.stage_count === 7 && ${S}.lit_red.length === 1 && ${S}.lit_blue.length === 0 && !${S}.fault_revealed"
+capture_state 20 stage6-red-start
+click_canvas 102 304 stage6-red-edge
+assert_state "${S}.floor_dark && ${S}.inspection.safe && ${S}.boundary_phase === 0 && ${S}.can_continue"
+capture_state 21 stage6-red-pass
+click_canvas 194 760 stage6-continue-blue
+assert_state "${S}.stage === 6 && ${S}.boundary_phase === 1 && ${S}.lit_blue.length === 1 && ${S}.lit_red.length === 0"
+capture_state 22 stage6-blue-start
+click_canvas 286 304 stage6-blue-intermediate-red
+assert_state "!${S}.floor_dark && !${S}.can_continue"
+capture_state 23 stage6-blue-intermediate-red
+click_canvas 286 304 stage6-blue-edge
+assert_state "${S}.floor_dark && ${S}.inspection.safe && ${S}.passed"
+capture_state 24 stage6-blue-pass
+click_canvas 194 760 stage6-continue
 
-capture_state 18 stage7-intro-dialogue
-click_canvas 195 793 stage7-confirm-dialogue
-capture_state 19 stage7-pre-action-call-disabled
-click_canvas 195 793 stage7-disabled-call
-assert_state "!window.discoBreakerState.can_call_foreman && window.discoBreakerState.last_action.action === 'confirm_dialogue'"
+capture_state 25 stage7-start
+click_canvas 194 760 stage7-disabled-call
+assert_state "!${S}.can_call_foreman && ${S}.last_action.action === 'next_stage'"
 cycle_grid_3x3 stage7
-assert_state "window.discoBreakerState.grid_size === 3 && window.discoBreakerState.corrections.every(value => value === 0)"
-capture_state 19a two-red-flickers-before
-click_canvas 195 309 stage7-regression-center-red
-assert_state "window.discoBreakerState.lit_red.length === 0 && window.discoBreakerState.lit_blue.length > 0"
-capture_state 19b two-red-flickers-after
-click_canvas 195 309 stage7-regression-center-reset 3
-click_canvas 195 309 stage7-place-center-red
-capture_state 20 stage7-after-center-red
-click_canvas 290 214 stage7-corner-cycle-red
-capture_state 21 stage7-corner-intermediate-red
-click_canvas 290 214 stage7-corner-cycle-blue
-capture_state 22 stage7-after-corner-blue
-assert_state "window.discoBreakerState.can_call_foreman"
-capture_state 23 stage7-inspection-ready
-click_canvas 195 793 stage7-call-foreman
-assert_state "window.discoBreakerState.inspection.safe"
-capture_state 24 stage7-graduation-passed
+assert_state "${S}.grid_size === 3 && ${S}.corrections.every(value => value === 0)"
+capture_state 26 two-red-flickers-before
+click_canvas 194 396 stage7-regression-center-red
+assert_state "${S}.lit_red.length === 0 && ${S}.lit_blue.length > 0"
+capture_state 27 two-red-flickers-after
+click_canvas 102 304 stage7-blue-leak-corner 2
+click_canvas 194 304 stage7-blue-leak-top 2
+click_canvas 194 760 stage7-call-blue-leak
+assert_state "${S}.inspection.blue_crossing && !${S}.inspection.red_crossing && ${S}.utterance.text === '漏電あり！\n青い線が左から右へ。'"
+capture_state 28 stage7-blue-leak 2.3
+click_canvas 194 304 stage7-both-leak-top 1
+click_canvas 194 488 stage7-both-leak-bottom
+click_canvas 194 396 stage7-both-leak-center 3
+click_canvas 194 760 stage7-call-both-leak
+assert_state "${S}.inspection.blue_crossing && ${S}.inspection.red_crossing && ${S}.utterance.text === '漏電あり！\n赤も青も抜けている。'"
+capture_state 29 stage7-both-leak 2.3
+click_canvas 102 304 stage7-undo-corner 2
+click_canvas 194 304 stage7-undo-top
+click_canvas 194 488 stage7-undo-bottom 3
+click_canvas 194 396 stage7-place-center-red
+capture_state 30 stage7-after-center-red
+click_canvas 286 304 stage7-corner-cycle-red
+capture_state 31 stage7-corner-intermediate-red
+click_canvas 286 304 stage7-corner-cycle-blue
+assert_state "${S}.can_call_foreman && ${S}.utterance.kind === 'ready'"
+capture_state 32 stage7-inspection-ready
+click_canvas 194 760 stage7-call-foreman
+assert_state "${S}.inspection.safe && ${S}.passed"
+capture_state 33 stage7-graduation-passed
 chrome-devtools-axi screenshot artifacts/tutorial-graduation.png >/dev/null
-click_canvas 195 793 stage7-complete
-assert_state "window.discoBreakerState.finished"
-capture_state 25 tutorial-complete
-click_canvas 195 793 graduation-run-replay
-assert_state "window.discoBreakerState.stage_id === 'red_one_tap' && !window.discoBreakerState.finished"
+click_canvas 194 760 stage7-complete
+assert_state "${S}.finished && !${S}.skipped && ${S}.utterance.kind === 'done'"
+capture_state 34 tutorial-complete
+click_canvas 194 760 graduation-run-replay
+assert_state "${S}.stage_id === 'red_one_tap' && !${S}.finished && ${S}.last_action.action === 'restart'"
 
 # A second deterministic run exercises the optional skip button without
 # replacing the full graduation path above.
@@ -219,46 +251,40 @@ chrome-devtools-axi open http://127.0.0.1:8877/index.html >/dev/null
 sleep 4
 click_canvas 195 775 skip-run-title-enter
 sleep 0.3
-click_canvas 195 793 skip-run-stage1-confirm
-click_canvas 195 309 skip-run-stage1-solve
-click_canvas 195 793 skip-run-stage1-next
-click_canvas 195 793 skip-run-stage2-confirm
-click_canvas 195 309 skip-run-stage2-red
-click_canvas 195 309 skip-run-stage2-blue
-click_canvas 195 793 skip-run-stage2-next
-click_canvas 195 793 skip-run-stage3-confirm
-click_canvas 195 309 skip-run-stage3-red
-click_canvas 195 309 skip-run-stage3-blue
-click_canvas 195 309 skip-run-stage3-both
-click_canvas 195 793 skip-run-stage3-next
-click_canvas 195 793 skip-run-stage4-confirm
-click_canvas 195 793 skip-run-stage4-call
-click_canvas 195 793 skip-run-stage4-next
-click_canvas 195 793 skip-run-stage5-confirm
-click_canvas 195 793 skip-run-stage5-next
-click_canvas 195 793 skip-run-stage7-confirm
-assert_state "window.discoBreakerState.stage_id === 'boundary_single'"
-click_canvas 100 214 skip-run-stage6-red
-click_canvas 195 793 skip-run-stage6-try-blue
-click_canvas 195 793 skip-run-stage6-blue-confirm
-click_canvas 290 214 skip-run-stage6-blue 2
-click_canvas 195 793 skip-run-stage6-next
-click_canvas 195 793 skip-run-stage7-confirm-review
-assert_state "window.discoBreakerState.stage_id === 'graduation_3x3' && !window.discoBreakerState.finished"
-click_canvas 195 735 stage7-skip-optional
-assert_state "window.discoBreakerState.finished"
-capture_state 26 optional-graduation-skipped
-click_canvas 195 793 optional-skip-run-replay
-assert_state "window.discoBreakerState.stage_id === 'red_one_tap' && !window.discoBreakerState.finished"
+click_canvas 194 396 skip-run-stage1-solve
+click_canvas 194 760 skip-run-stage1-continue
+click_canvas 194 396 skip-run-stage2-solve 2
+click_canvas 194 760 skip-run-stage2-continue
+click_canvas 194 396 skip-run-stage3-solve 3
+click_canvas 194 760 skip-run-stage3-continue
+click_canvas 194 760 skip-run-stage4-call
+click_canvas 194 760 skip-run-stage4-continue
+click_canvas 194 760 skip-run-stage5-call
+click_canvas 194 304 skip-run-stage5-repair-top 3
+click_canvas 194 488 skip-run-stage5-repair-bottom 3
+click_canvas 194 396 skip-run-stage5-repair-center
+click_canvas 194 760 skip-run-stage5-call-again
+click_canvas 194 760 skip-run-stage5-continue
+assert_state "${S}.stage_id === 'boundary_single'"
+click_canvas 102 304 skip-run-stage6-red
+click_canvas 194 760 skip-run-stage6-continue-blue
+click_canvas 286 304 skip-run-stage6-blue 2
+click_canvas 194 760 skip-run-stage6-continue
+assert_state "${S}.stage_id === 'graduation_3x3' && !${S}.finished"
+click_canvas 194 668 stage7-skip-optional
+assert_state "${S}.finished && ${S}.skipped && !${S}.passed && ${S}.last_action.action === 'skip_graduation'"
+capture_state 35 optional-graduation-skipped
+click_canvas 194 760 optional-skip-run-replay
+assert_state "${S}.stage_id === 'red_one_tap' && !${S}.finished"
 
-jq -e -s 'length == 37 and all(.viewport.width == 390 and .viewport.height == 844)' "$inventory_file" >/dev/null
-jq -e -s 'any(.[]; .action == "stage7-disabled-call") and any(.[]; .action == "stage7-skip-optional") and any(.[]; .action == "graduation-run-replay") and any(.[]; .action == "optional-skip-run-replay")' "$action_file" >/dev/null
+jq -e -s 'length == 35 and all(.viewport.width == 390 and .viewport.height == 844)' "$inventory_file" >/dev/null
+jq -e -s 'any(.[]; .action == "stage7-disabled-call") and any(.[]; .action == "stage7-skip-optional") and any(.[]; .action == "graduation-run-replay") and any(.[]; .action == "optional-skip-run-replay") and all(.[]; .state.dialogue_visible == null)' "$action_file" >/dev/null
 montage_inputs=()
 for index in "${!captures[@]}"; do
   printf -v label '%02d' "$((index + 1))"
   montage_inputs+=("(" "${captures[$index]}" -set label "$label" ")")
 done
-magick montage "${montage_inputs[@]}" -thumbnail 195x422 -tile 4x -geometry +8+24 -background '#120a24' -fill '#f7f1e3' -pointsize 14 artifacts/tutorial-audit-contact-sheet.png
+magick montage "${montage_inputs[@]}" -thumbnail 195x422 -tile 5x -geometry +8+24 -background '#120a24' -fill '#f7f1e3' -pointsize 14 artifacts/tutorial-audit-contact-sheet.png
 
 chrome-devtools-axi console --type error >artifacts/browser-console.txt
-printf 'PASS: browser audited 37 tutorial states and every connection box\n'
+printf 'PASS: browser audited 35 tutorial states and every connection box\n'

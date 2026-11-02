@@ -83,19 +83,15 @@ try {
   await page.screenshot({ path: `${out}/title-reflections-b.png` });
   assert.notDeepEqual(await page.screenshot({clip:{x:0,y:0,width:390,height:180}}), mirrorA, 'mirror ball and rays move');
   assert.deepEqual(await state(page), launch, 'animation cannot change gameplay');
-  // Entry and the lesson OK overlap; a rapid second click must not skip copy.
+  // Entry and the lesson's bottom button overlap; a rapid second click cannot act.
   await tap(page,195,775,35);
-  await tap(page,195,793,35);
-  assert.equal((await state(page)).dialogue_visible, true);
+  const entered = await state(page);
+  await tap(page,195,760,35);
+  assert.equal((await state(page)).action_count, entered.action_count);
+  assert.equal((await state(page)).dialogue_visible, undefined, 'no dialogue gate');
   await page.waitForTimeout(300);
-  assert.notDeepEqual(
-    await page.screenshot({clip:{x:342,y:786,width:12,height:14}}),
-    await page.screenshot({clip:{x:322,y:786,width:12,height:14}}),
-    'tutorial dialogue button retains its trailing chevron',
-  );
-  await page.screenshot({path:`${out}/tutorial-dialogue-chevron-390x844.png`});
-  await tap(page,195,793);
-  await tap(page,100,214);
+  await page.screenshot({path:`${out}/tutorial-start-390x844.png`});
+  await tap(page,102,304);
   const playing = await state(page);
   await tap(page,38,36,350);
   const home = await state(page);
@@ -109,25 +105,23 @@ try {
   const resumed = await state(page);
   assert.deepEqual(resumed, playing, 'continue preserves entire semantic state');
   // Cancel the edge wire, solve, and resume an existing success without a second sting.
-  for(let i=0;i<3;i++) await tap(page,100,214);
-  await tap(page,195,309);
+  for(let i=0;i<3;i++) await tap(page,102,304);
+  await tap(page,194,396);
   const solved = await feedback(page);
   assert.equal(solved.success_count,1);
   await tap(page,38,36,350);
   await tap(page,195,775,350);
   assert.equal((await feedback(page)).sound_starts,solved.sound_starts);
-  await tap(page,195,793); // next
-  await tap(page,195,793); // blue intro
-  await tap(page,195,309);
-  await tap(page,195,309);
-  await tap(page,195,793); // combined
-  await tap(page,195,793);
-  for(let i=0;i<3;i++) await tap(page,195,309);
-  await tap(page,195,793); // inspection
-  await tap(page,195,793);
-  await tap(page,195,793);
-  await tap(page,195,793); // trap
-  await tap(page,195,793);
+  assert.equal((await state(page)).can_continue,true,'a resumed pass keeps Continue');
+  await tap(page,194,760); // next
+  await tap(page,194,396);
+  await tap(page,194,396);
+  await tap(page,194,760); // combined
+  for(let i=0;i<3;i++) await tap(page,194,396);
+  await tap(page,194,760); // inspection
+  await tap(page,194,760);
+  await tap(page,194,760);
+  await tap(page,194,760); // trap
   assert.equal((await feedback(page)).leak_active,true);
   const leakCount=(await feedback(page)).leak_sound_starts;
   await tap(page,38,36,350);
@@ -136,24 +130,28 @@ try {
   await tap(page,195,775,350);
   assert.equal((await feedback(page)).leak_active,true);
   assert.equal((await feedback(page)).leak_sound_starts,leakCount);
-  await tap(page,195,793); // boundary
-  await tap(page,195,793);
-  await tap(page,100,214);
-  await tap(page,195,793);
-  await tap(page,195,793);
-  await tap(page,290,214);
-  await tap(page,290,214);
-  await tap(page,195,793); // final
-  await tap(page,195,793);
-  await tap(page,195,735); // skip
+  for(let i=0;i<3;i++) await tap(page,194,304);
+  for(let i=0;i<3;i++) await tap(page,194,488);
+  await tap(page,194,396);
+  await tap(page,194,760); // repaired trap
+  await tap(page,194,760); // boundary
+  await tap(page,102,304);
+  await tap(page,194,760);
+  await tap(page,286,304);
+  await tap(page,286,304);
+  await tap(page,194,760); // final
+  await tap(page,194,668); // skip
   assert.equal((await state(page)).finished,true);
-  await tap(page,195,575,350); // explicit Back to title
+  assert.equal((await state(page)).skipped,true);
+  await page.screenshot({path:`${out}/tutorial-skipped-390x844.png`});
+  await tap(page,194,668,350); // explicit Back to title
   assert.equal((await state(page)).screen,'title');
   await captureTitle(page, 'completed');
   await page.screenshot({path:`${out}/title-after-completion.png`});
   await tap(page,195,775,350); // replay
   assert.equal((await state(page)).stage,1);
-  assert.equal((await state(page)).dialogue_visible,true);
+  assert.equal((await state(page)).last_action.action,'restart');
+  assert.equal((await state(page)).utterance.kind,'start');
   assert.equal((await state(page)).finished,false);
   assert.equal((await feedback(page)).leak_active,false);
   // Shared mute across title, tutorial and a browser reload.
@@ -161,9 +159,8 @@ try {
   await tap(page,325,36);
   assert.equal((await feedback(page)).muted,true);
   await tap(page,195,775,350);
-  await tap(page,195,793);
-  await tap(page,195,309);
-  assert.equal((await feedback(page)).sound_starts,solved.sound_starts+5); // prior safe lessons only, muted replay adds zero
+  await tap(page,194,396);
+  assert.equal((await feedback(page)).sound_starts,solved.sound_starts+6); // prior safe lessons only, muted replay adds zero
   await page.reload();
   await page.waitForFunction(()=>window.discoBreakerState?.screen==='title');
   assert.equal((await feedback(page)).muted,true);
@@ -178,9 +175,20 @@ try {
   await captureAudioToggle(quiet, 'title');
   await tap(quiet,195,775,350);
   await captureAudioToggle(quiet, 'tutorial');
-  await tap(quiet,195,793);
+  await tap(quiet,102,304);
   await quiet.waitForTimeout(700);
   assert.equal((await feedback(quiet)).lamp_sound_starts,0);
+  // Reduced motion: a lesson, and a leak explanation, are drawn in their final static state.
+  const lesson = await quiet.screenshot();
+  await quiet.waitForTimeout(1100);
+  assert.deepEqual(await quiet.screenshot(),lesson,'reduced-motion lesson is static');
+  for(let i=0;i<3;i++) await tap(quiet,102,304);
+  await tap(quiet,194,304);
+  await tap(quiet,194,488);
+  assert.equal((await state(quiet)).utterance.kind,'unsafe');
+  const leakStill = await quiet.screenshot({path:`${out}/tutorial-reduced-motion-leak.png`});
+  await quiet.waitForTimeout(1100);
+  assert.deepEqual(await quiet.screenshot(),leakStill,'reduced-motion leak explanation is static and complete at once');
   await quiet.close();
   for(const [width,height] of [[320,568],[412,915],[844,390]]) {
     const mobile = await create({viewport:{width,height},reducedMotion:'reduce'});

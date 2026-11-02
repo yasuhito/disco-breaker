@@ -26,7 +26,9 @@ page.on("pageerror", (error) => {
 });
 
 let captureIndex = 0;
-async function captureState(name) {
+async function captureState(name, settle = 900) {
+  // Let the foreman finish speaking and an inspection presentation settle (~2 s).
+  await page.waitForTimeout(settle);
   captureIndex += 1;
   const sequence = String(captureIndex).padStart(2, "0");
   await page.screenshot({ path: `${artifactsDir}/ci-audit-${sequence}-${name}.png` });
@@ -61,14 +63,18 @@ async function assertState(predicate, description) {
   }
 }
 
+// Lesson layout (390 x 844): connection boxes at x 102/194/286, y 304/396/488;
+// the bottom button (Continue / call the foreman / Replay) at 194,760; the
+// optional skip (and Back to title) at 194,668; home at 34,34.
+const BOX_X = [102, 194, 286];
+const BOX_Y = [304, 396, 488];
+const box = (node, count = 1) => clickCanvas(BOX_X[node % 3], BOX_Y[Math.floor(node / 3)], count);
+const bottom = () => clickCanvas(194, 760);
+
 async function cycleGrid3x3(stage) {
-  const xs = [100, 195, 290];
-  const ys = [214, 309, 404];
-  for (let row = 0; row < 3; row += 1) {
-    for (let column = 0; column < 3; column += 1) {
-      if (stage !== "stage4" && stage !== "stage7" && row === 1 && column === 1) continue;
-      await clickCanvas(xs[column], ys[row], 4);
-    }
+  for (let node = 0; node < 9; node += 1) {
+    if (stage !== "stage4" && stage !== "stage7" && node === 4) continue;
+    await box(node, 4);
   }
 }
 
@@ -80,116 +86,136 @@ try {
   await captureState("title");
   await clickCanvas(195, 775);
   await page.waitForTimeout(300);
-  await assertState("state.screen === 'tutorial' && state.stage_id === 'red_one_tap'", "tutorial opens on stage 1");
-  await captureState("stage1-intro-dialogue");
-  await clickCanvas(195, 793);
-  await captureState("stage1-pre-action");
+  await assertState("state.screen === 'tutorial' && state.stage_id === 'red_one_tap' && state.schema === 'disco-breaker-tutorial-state.v2'", "tutorial opens on stage 1");
+  await assertState("!('dialogue_visible' in state) && state.utterance.kind === 'start' && !state.can_continue", "the board is editable at once with Continue disabled");
+  await captureState("stage1-start");
+  await bottom();
+  await assertState("state.stage === 1 && state.last_action.action === 'launch'", "disabled Continue is inert");
   await cycleGrid3x3("stage1");
   await assertState("state.corrections.every((value) => value === 0)", "stage1 grid returns to neutral after cycling");
-  await clickCanvas(195, 309);
-  await assertState("state.result_visible && state.inspection.safe", "stage1 solve is logically safe");
+  await box(1);
+  await box(7);
+  await assertState("state.floor_dark && state.inspected && state.inspection.red_crossing && !state.can_continue && state.utterance.kind === 'unsafe'", "a dark but leaking board does not pass");
+  await captureState("stage1-dark-leak", 2300);
+  await box(1, 3);
+  await box(7, 3);
+  await box(4);
+  await assertState("state.passed && state.can_continue && state.inspection.safe", "stage1 solve is logically safe");
   if ((await page.evaluate(() => window.discoBreakerFeedback)).success_count !== 1) throw new Error("stage1 reward must fire once");
-  await captureState("stage1-success");
-  await clickCanvas(195, 793);
+  await captureState("stage1-pass");
+  await bottom();
 
-  await captureState("stage2-intro-dialogue");
-  await clickCanvas(195, 793);
+  await captureState("stage2-start");
   await cycleGrid3x3("stage2");
-  await clickCanvas(195, 309);
-  await clickCanvas(195, 309);
-  await assertState("state.floor_dark", "stage2 solve darkens the floor");
-  await captureState("stage2-success-blue");
-  await clickCanvas(195, 793);
+  await box(4, 2);
+  await assertState("state.floor_dark && state.passed", "stage2 solve darkens the floor");
+  await captureState("stage2-pass");
+  await bottom();
 
-  await captureState("stage3-intro-dialogue");
-  await clickCanvas(195, 793);
+  await captureState("stage3-start");
   await cycleGrid3x3("stage3");
-  await clickCanvas(195, 309);
-  await clickCanvas(195, 309);
-  await clickCanvas(195, 309);
-  await captureState("stage3-success-both");
-  await clickCanvas(195, 793);
+  await box(4, 3);
+  await assertState("state.passed", "stage3 solve passes");
+  await captureState("stage3-pass");
+  await bottom();
 
-  await captureState("stage4-intro-dialogue");
-  await clickCanvas(195, 793);
-  await assertState("state.can_call_foreman", "stage4 allows calling the foreman before touching the grid");
+  await captureState("stage4-start");
+  await assertState("state.can_call_foreman && state.inspection_mode === 'call'", "stage4 allows calling the foreman before touching the grid");
   await cycleGrid3x3("stage4");
-  await clickCanvas(195, 214);
-  await clickCanvas(195, 309, 3);
-  await clickCanvas(195, 404);
-  await clickCanvas(195, 793);
-  await assertState("state.floor_dark && !state.inspection.safe", "dark floor may fail inspection");
-  await captureState("stage4-failed-inspection");
-  await clickCanvas(195, 793);
-  await assertState("!state.result_visible && state.stage === 4", "retry keeps the current floor editable");
-  await captureState("stage4-retry");
-  await clickCanvas(195, 214, 3);
-  await clickCanvas(195, 309);
-  await clickCanvas(195, 404, 3);
-  await clickCanvas(195, 793);
-  await assertState("state.inspection.safe", "stage4 inspection passes");
+  await box(1);
+  await box(4, 3);
+  await box(7);
+  await bottom();
+  await assertState("state.floor_dark && !state.inspection.safe && !state.can_continue", "dark floor may fail inspection");
+  await captureState("stage4-failed-inspection", 2300);
+  await box(1, 3);
+  await assertState("!state.inspected && state.stage === 4", "an edit clears the verdict and keeps the floor editable");
+  await box(4);
+  await box(7, 3);
+  await bottom();
+  await assertState("state.inspection.safe && state.passed", "stage4 inspection passes");
   await captureState("stage4-inspection-passed");
-  await clickCanvas(195, 793);
+  await bottom();
 
-  await captureState("stage5-intro-dialogue");
-  await clickCanvas(195, 793);
+  await captureState("stage5-start");
+  await assertState("state.floor_dark && state.can_call_foreman && !state.fault_revealed", "stage5 trap looks cleared and hides its fault");
+  await bottom();
   await assertState(
-    "state.inspection.red_crossing && !state.inspection.blue_crossing",
-    "stage5 crossing trap fails on the red family only",
+    "state.inspection.red_crossing && !state.inspection.blue_crossing && !state.passed && !state.can_continue && state.fault_revealed",
+    "stage5 crossing trap fails on the red family only and does not pass",
   );
   const leak = await page.evaluate(() => window.discoBreakerFeedback);
-  if (!leak.leak_active || leak.leak_events !== 2 || leak.leak_sound_starts !== 2 || JSON.stringify(leak.leak_routes[0].qubits) !== '[1,4,7]' || leak.revealed_hidden['4'] !== 1) throw new Error('trap must reveal the original center X and its real residual route once');
-  await captureState("stage5-failure-witness");
-  await clickCanvas(195, 793);
+  if (!leak.leak_active || leak.leak_events !== 3 || leak.leak_sound_starts !== 3 || JSON.stringify(leak.leak_routes[0].qubits) !== '[1,4,7]' || leak.revealed_hidden['4'] !== 1) throw new Error(`trap must reveal the original center X and its real residual route once: ${JSON.stringify(leak)}`);
+  const live = await page.evaluate(() => document.getElementById("disco-breaker-live")?.textContent ?? "");
+  if (!live.includes("漏電あり！床は2本で暗い。") || !live.includes("つづける はまだ押せない")) throw new Error(`the live region must announce the latest line and the button: ${live}`);
+  await captureState("stage5-leak-explained", 2300);
+  await bottom();
+  await assertState("state.stage === 5 && state.last_action.action === 'inspect'", "Continue stays disabled after the leak");
+  await box(1, 3);
+  await assertState("!state.floor_dark && state.fault_revealed && state.utterance.text.includes('破線')", "the repair keeps the dashed fault");
+  await box(7, 3);
+  await box(4);
+  await assertState("state.floor_dark && state.can_call_foreman && state.utterance.kind === 'ready'", "repaired trap asks for another inspection");
+  await bottom();
+  await assertState("state.passed && state.can_continue", "the repaired trap passes its inspection");
+  await captureState("stage5-pass");
+  await bottom();
 
   await assertState("state.stage === 6 && state.stage_count === 7 && state.stage_id === 'boundary_single' && state.lit_red.length === 1 && state.lit_blue.length === 0", "single red boundary lesson");
   const afterLeak = await page.evaluate(() => window.discoBreakerFeedback);
   if (afterLeak.leak_active || afterLeak.leak_routes.length || Object.keys(afterLeak.revealed_hidden).length) throw new Error('next lesson must remove cracks and answer reveal');
-  await captureState("stage6-red-intro");
-  await clickCanvas(195,793);
-  await captureState("stage6-red-ready");
-  await clickCanvas(100,214);
-  await assertState("state.floor_dark && state.inspection.safe && state.result_visible", "one tap safely clears red edge");
-  await captureState("stage6-red-cleared");
-  await clickCanvas(195,793);
+  await captureState("stage6-red-start");
+  await box(0);
+  await assertState("state.floor_dark && state.inspection.safe && state.passed && state.boundary_phase === 0", "one tap safely clears red edge; blue waits for Continue");
+  await captureState("stage6-red-pass");
+  await bottom();
   await assertState("state.stage === 6 && state.boundary_phase === 1 && state.lit_blue.length === 1 && state.lit_red.length === 0", "single blue boundary follows red");
-  await captureState("stage6-blue-intro");
-  await clickCanvas(195,793);
-  await captureState("stage6-blue-ready");
-  await clickCanvas(290,214);
-  await assertState("!state.floor_dark && !state.result_visible", "red intermediate does not clear blue");
+  await captureState("stage6-blue-start");
+  await box(2);
+  await assertState("!state.floor_dark && !state.can_continue", "red intermediate does not clear blue");
   await captureState("stage6-blue-intermediate-red");
-  await clickCanvas(290,214);
-  await assertState("state.floor_dark && state.inspection.safe && state.result_visible", "two taps safely clear blue edge");
-  await captureState("stage6-blue-cleared");
-  await clickCanvas(195,793);
-  await captureState("stage7-intro-dialogue");
-  await clickCanvas(195, 793);
-  await clickCanvas(195, 793);
-  await assertState(
-    "!state.can_call_foreman && state.last_action.action === 'confirm_dialogue'",
-    "stage7 foreman call stays disabled before the grid is wired",
-  );
+  await box(2);
+  await assertState("state.floor_dark && state.inspection.safe && state.passed", "two taps safely clear blue edge");
+  await captureState("stage6-blue-pass");
+  await bottom();
+  await captureState("stage7-start");
+  await bottom();
+  await assertState("!state.can_call_foreman && state.last_action.action === 'next_stage'", "stage7 foreman call stays disabled before the grid is wired");
   await cycleGrid3x3("stage7");
   await assertState("state.grid_size === 3 && state.corrections.every(value => value === 0)", "final practice is a neutral 3x3 floor");
   await captureState("two-red-flickers-before");
-  await clickCanvas(195,309);
+  await box(4);
   await assertState("state.lit_red.length === 0 && state.lit_blue.length > 0", "red immediately clears both adjacent red flickers");
   await captureState("two-red-flickers-after");
-  await clickCanvas(195,309,3);
-  await clickCanvas(195,309);
-  await clickCanvas(290,214,2);
+  await box(0, 2);
+  await box(1, 2);
+  await bottom();
+  await assertState("state.inspection.blue_crossing && !state.inspection.red_crossing && state.utterance.text === '漏電あり！\\n青い線が左から右へ。'", "a blue leak is named blue");
+  await captureState("stage7-blue-leak", 2300);
+  await box(1);
+  await box(7);
+  await box(4, 3);
+  await bottom();
+  await assertState("state.inspection.blue_crossing && state.inspection.red_crossing && state.utterance.text === '漏電あり！\\n赤も青も抜けている。'", "a leak in both colours names both");
+  const both = await page.evaluate(() => window.discoBreakerFeedback);
+  if (both.leak_routes.length !== 2) throw new Error(`both colours need their own route: ${JSON.stringify(both)}`);
+  await captureState("stage7-both-leak", 2300);
+  await box(0, 2);
+  await box(1);
+  await box(7, 3);
+  await box(4);
+  await box(2, 2);
   await assertState("state.can_call_foreman", "stage7 wiring enables calling the foreman");
   await captureState("stage7-inspection-ready");
-  await clickCanvas(195, 793);
-  await assertState("state.inspection.safe", "stage7 graduation inspection passes");
+  await bottom();
+  await assertState("state.inspection.safe && state.passed", "stage7 graduation inspection passes");
   await captureState("stage7-graduation-passed");
-  await clickCanvas(195, 793);
-  await assertState("state.finished", "tutorial reports finished");
+  await bottom();
+  await assertState("state.finished && !state.skipped", "tutorial reports finished");
   const rewards = await page.evaluate(() => window.discoBreakerFeedback);
-  if (rewards.success_count !== 7 || rewards.sound_starts !== 7) throw new Error(`unexpected tutorial rewards: ${JSON.stringify(rewards)}`);
+  if (rewards.success_count !== 8 || rewards.sound_starts !== 8) throw new Error(`unexpected tutorial rewards: ${JSON.stringify(rewards)}`);
   await captureState("tutorial-complete");
-  await clickCanvas(195, 793);
+  await bottom();
   await assertState("state.stage_id === 'red_one_tap' && !state.finished", "replay resets to stage 1");
 
   await page.goto(baseUrl);
@@ -197,36 +223,30 @@ try {
   await clickCanvas(195, 775);
   await page.waitForTimeout(300);
   await assertState("state.stage_id === 'red_one_tap'", "optional skip run opens on stage 1");
-  await clickCanvas(195, 793);
-  await clickCanvas(195, 309);
-  await clickCanvas(195, 793);
-  await clickCanvas(195, 793);
-  await clickCanvas(195, 309);
-  await clickCanvas(195, 309);
-  await clickCanvas(195, 793);
-  await clickCanvas(195, 793);
-  await clickCanvas(195, 309);
-  await clickCanvas(195, 309);
-  await clickCanvas(195, 309);
-  await clickCanvas(195, 793);
-  await clickCanvas(195, 793);
-  await clickCanvas(195, 793);
-  await clickCanvas(195, 793);
-  await clickCanvas(195, 793);
-  await clickCanvas(195, 793);
-  await clickCanvas(195, 793);
+  await box(4);
+  await bottom();
+  await box(4, 2);
+  await bottom();
+  await box(4, 3);
+  await bottom();
+  await bottom();
+  await bottom();
+  await bottom();
+  await box(1, 3);
+  await box(7, 3);
+  await box(4);
+  await bottom();
+  await bottom();
   await assertState("state.stage_id === 'boundary_single'", "skip run reaches boundary lesson");
-  await clickCanvas(100,214);
-  await clickCanvas(195,793);
-  await clickCanvas(195,793);
-  await clickCanvas(290,214,2);
-  await clickCanvas(195,793);
-  await clickCanvas(195,793);
+  await box(0);
+  await bottom();
+  await box(2, 2);
+  await bottom();
   await assertState("state.stage_id === 'graduation_3x3' && !state.finished", "optional skip run reaches graduation");
-  await clickCanvas(195, 735);
-  await assertState("state.finished && state.last_action.action === 'skip_graduation'", "optional graduation skip finishes tutorial");
+  await clickCanvas(194, 668);
+  await assertState("state.finished && state.skipped && !state.passed && state.last_action.action === 'skip_graduation'", "optional graduation skip finishes tutorial without a pass");
   await captureState("optional-graduation-skipped");
-  await clickCanvas(195, 793);
+  await bottom();
   await assertState("state.stage_id === 'red_one_tap' && !state.finished", "optional skip replay resets to stage 1");
 
   // Native mobile touches must not also cycle a wire through emulated mouse input.
@@ -238,18 +258,17 @@ try {
   const touch = async (x, y) => { await touchPage.touchscreen.tap(x, y); await touchPage.waitForTimeout(100); };
   await touch(195, 775);
   await touchPage.waitForTimeout(300);
-  await touch(195, 793);
   const initialCount = await touchPage.evaluate(() => window.discoBreakerState.action_count);
   for (let value = 1; value <= 4; value += 1) {
-    await touch(100, 214);
+    await touch(102, 304);
     const state = await touchPage.evaluate(() => window.discoBreakerState);
     if (state.corrections[0] !== value % 4 || state.action_count !== initialCount + value) {
       throw new Error(`one touch must produce one wire change: ${JSON.stringify(state)}`);
     }
   }
-  await touch(195, 309);
+  await touch(194, 396);
   const touched = await touchPage.evaluate(() => window.discoBreakerState);
-  if (!touched.result_visible || !touched.floor_dark || touched.corrections[4] !== 1) throw new Error("native mobile touch failed to solve red lesson");
+  if (!touched.passed || !touched.floor_dark || touched.corrections[4] !== 1) throw new Error("native mobile touch failed to solve red lesson");
   await touchPage.screenshot({ path: `${artifactsDir}/mobile-touch-success.png` });
   await touchPage.close();
 

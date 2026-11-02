@@ -9,8 +9,10 @@ fi
 
 godot --headless --path . --import
 godot --headless --path . --check-only --script res://src/tutorial_view.gd
+godot --headless --path . --check-only --script res://src/lesson_artwork.gd
 godot --headless --path . --script res://tests/run_tests.gd
 godot --headless --path . --script res://tests/title_flow.gd
+godot --headless --path . --script res://tests/lesson_view.gd
 godot --headless --path . --script res://tests/title_geometry.gd
 godot --headless --path . --script res://tools/headless_driver.gd
 mkdir -p build/web

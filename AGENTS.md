@@ -2,7 +2,7 @@
 
 This file is the project's committed home for project-intrinsic agent knowledge: build, test, release, architecture, and sharp-edge notes that should travel with the code.
 
-- Use Godot 4.7.2 and the Compatibility renderer; run the complete local validation with `./scripts/check.sh` and browser validation with `./scripts/browser_e2e.sh`.
+- Use Godot 4.7.2 and the Compatibility renderer; run the complete local validation with `./scripts/check.sh` and browser validation with `./scripts/browser_e2e.sh`. Without `/opt/google/chrome`, start a private Playwright Chromium with `--remote-debugging-port` and run `browser_e2e.sh` with `CHROME_DEVTOOLS_AXI_BROWSER_URL` pointing at it.
 - Keep inspection decisions in `src/inspection_semantics.gd`; rendered witness paths explain an already-computed parity result and must never determine it.
 - `docs/architecture.md` documents the tutorial's three intentionally narrow interfaces and stable semantic-state boundary.
 - CI (`.github/workflows/ci.yml`) can't use `chrome-devtools-axi` (local-only); it runs `scripts/ci_e2e.mjs`, a Playwright port of `scripts/browser_e2e.sh`'s canvas input-injection surface. Keep both in sync when tutorial controls change. `.github/workflows/pages.yml` deploys the same `scripts/check.sh` Web export to GitHub Pages from `main`.

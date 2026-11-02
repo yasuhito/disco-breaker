@@ -2,7 +2,7 @@
 
 A narrow, playable seven-stage tutorial vertical slice for Godot 4.7.2. It opens on an animated title screen and contains the tutorial; campaign, score, lives, progression, inventory, live services and analytics are not implemented.
 
-The current UI is Japanese-first; an English version is deferred. The portrait UI teaches one-tap red wiring, two-tap blue wiring, three-tap combined wiring, foreman inspection, the cleared-looking crossing trap, and an optional 3 × 3 practice floor. Tap a connection box to cycle `empty → red → blue → combined → empty`. Child-facing copy deliberately avoids developer operator labels. There is no keyboard or gamepad path: every control is a tap/click on the portrait canvas, including dialogue confirmation and the foreman call button.
+The current UI is Japanese-first; an English version is deferred. The portrait UI teaches one-tap red wiring, two-tap blue wiring, three-tap combined wiring, foreman inspection, the cleared-looking crossing trap (observe the leak, then repair it), the edge floors, and an optional 3 × 3 practice floor. Each lesson shows a progress bar, the foreman with his latest line, the board, a wire legend and one bottom button; the board is editable at once, and 「つづける」 is enabled only when the floor is dark and the inspection is safe. Tap a connection box to cycle `empty → red → blue → combined → empty`. Child-facing copy deliberately avoids developer operator labels. There is no keyboard or gamepad path: every control is a tap/click on the portrait canvas, including the foreman call button.
 
 ## Play it
 
@@ -47,16 +47,17 @@ This is a title-and-tutorial vertical slice. 「スタート」 is visibly unava
 
 ## Code seams
 
-- `src/tutorial_state.gd`: the seven fixed tutorial definitions, deterministic tap cycling, dialogue gates, semantic state, and action trace.
+- `src/tutorial_state.gd`: the seven fixed tutorial definitions, deterministic tap cycling, automatic or called inspection, the pass/Continue rule, the foreman's latest utterance, semantic state, and action trace.
 - `src/inspection_semantics.gd`: independent red/blue mod-2 boundary-crossing classification. Witness paths are generated only after an odd logical class is computed, so artwork cannot decide the verdict.
-- `src/tutorial_view.gd`: stable 390 × 844 portrait drawing, touch hit testing, the foreman SVG and tactile console presentation, reduced motion, and Web semantic-state publication.
-- `tests/run_tests.gd`: tap cycle, guided lessons, independent crossing classes, trap, graduation, and semantic contract.
+- `src/tutorial_view.gd`: stable 390 × 844 portrait shell, touch hit testing, navigation, audio, animation clocks, reduced motion, and Web semantic-state publication.
+- `src/lesson_artwork.gd`: the lesson screen, ported from the approved 45-degree mock; it draws the published state and never decides a verdict.
+- `tests/run_tests.gd`: tap cycle, all seven lessons, allowed actions, the trap's observe-then-repair flow and alternative repairs, the proposal's verified boards, an exhaustive pass/parity check, latest utterances, rewards, leaks and the semantic contract. `tests/lesson_view.gd` covers the lesson geometry, plates and hit areas, input at any scale, the inspection presentation and stale-result cancellation.
 
-The final practice needs only three taps from an empty board: red at row 2, column 2, then blue at row 1, column 3 (two taps). Coordinates count from the top left. Calling the foreman passes with no logical error. The optional skip remains available. Campaign gameplay is not implemented in this tutorial-only repository.
+The final practice needs only three taps from an empty board: red at row 2, column 2, then blue at row 1, column 3 (two taps). Coordinates count from the top left. Calling the foreman passes with no logical error. The crossing trap (lesson 5) is dark but leaking: calling the foreman explains the leak, and the lesson passes only on a safe inspection after a repair (for example removing the top and bottom red and placing red at the centre, seven taps; three-tap alternatives pass too). The optional skip remains available. Campaign gameplay is not implemented in this tutorial-only repository.
 
-Boundary lesson (sixth dot): on a 3 × 3 floor, clear the single red edge syndrome by tapping the upper-left box once, then clear the single blue edge syndrome by tapping the upper-right box twice. Interior placements flip two incident checks; these edge placements flip one. Each exercise uses the same syndrome and logical inspection as final practice, accepting stabilizer-equivalent corrections. The final optional review is the seventh lesson.
+Boundary lesson (lesson 6): on a 3 × 3 floor, clear the single red edge syndrome by tapping the upper-left box once, then after 「つづける」 clear the single blue edge syndrome by tapping the upper-right box twice. Interior placements flip two incident checks; these edge placements flip one. Each exercise uses the same syndrome and logical inspection as final practice, accepting stabilizer-equivalent corrections. The final optional review is the seventh lesson.
 
-The UI uses a tactile disco lighting-console direction. Japanese copy uses bundled Noto Sans CJK JP with Unicode line wrapping. Fonts are licensed under the SIL Open Font License (see `assets/fonts/README.md` for attribution and reproduction); no external font request is needed. Native mobile touches and mouse clicks share the same one-step input behavior.
+The UI uses flat shapes with horizontal, vertical and 45-degree edges, ported from the approved lesson mock. Red wiring is always drawn 「\」 and blue 「/」. Japanese copy uses bundled Noto Sans CJK JP. Fonts are licensed under the SIL Open Font License (see `assets/fonts/README.md` for attribution and reproduction); no external font request is needed. Native mobile touches and mouse clicks share the same one-step input behavior.
 
 ## Title and design references
 

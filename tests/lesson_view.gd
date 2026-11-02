@@ -1,0 +1,344 @@
+extends SceneTree
+
+# Lesson screen regression: the proposal's angular geometry, plates that are
+# exactly their hit areas, one tap per wire step at any viewport scale, the
+# latest utterance only, the inspection presentation (both colours, reduced
+# motion), and cancellation of stale results by rapid input.
+const View := preload("res://src/tutorial_view.gd")
+const Lesson := preload("res://src/lesson_artwork.gd")
+const Tutorial := preload("res://src/tutorial_state.gd")
+const FONT := preload("res://assets/fonts/NotoSansJP-Regular.otf")
+const BOLD_FONT := preload("res://assets/fonts/NotoSansJP-Bold.tres")
+
+var failures: Array[String] = []
+
+
+class Probe:
+	extends RefCounted
+	var polygons: Array[PackedVector2Array] = []
+	var strokes: Array[PackedVector2Array] = []
+	var texts: Array[Dictionary] = []
+	var log: Array = []
+
+	func draw_colored_polygon(points: PackedVector2Array, color: Color) -> void:
+		polygons.append(points)
+		log.append(["polygon", points, color])
+
+	func draw_polyline(points: PackedVector2Array, color: Color, width: float, _aa := false) -> void:
+		strokes.append(points)
+		log.append(["polyline", points, color, width])
+
+	func _draw_text(text: String, position: Vector2, size: int, color: Color, bold := false) -> void:
+		texts.append({"text": text, "position": position, "size": size, "color": color})
+		log.append(["text", text, position, color])
+
+	func _text_width(text: String, size: int, bold := false) -> float:
+		return (BOLD_FONT if bold else FONT).get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+
+
+func _init() -> void:
+	_run.call_deferred()
+
+
+func _expect(condition: bool, description: String) -> void:
+	if not condition:
+		failures.append(description)
+
+
+func _anim(time := 0.0, reduced := true, extra := {}) -> Dictionary:
+	var anim := {"device_scale": 2.0, "reduced": reduced, "time": time, "muted": false, "progress": 0.0,
+		"since_talk": 10.0, "since_success": 10.0, "since_enable": 10.0, "since_press": 10.0,
+		"pressed_node": -1, "leak_age": 10.0, "routes": []}
+	anim.merge(extra, true)
+	return anim
+
+
+func _routes(model: Tutorial) -> Array[Dictionary]:
+	var routes: Array[Dictionary] = []
+	var d := model.definition()
+	for component in [1, 2]:
+		if not bool(model.inspection.get("red_crossing" if component == 1 else "blue_crossing", false)):
+			continue
+		var faces: Array = d.red_faces if component == 1 else d.blue_faces
+		var route := preload("res://src/leak_feedback.gd").route(faces, model._residual_support(component), 3, component == 1)
+		route.component = component
+		route.points = Lesson.route_points(route, faces)
+		routes.append(route)
+	return routes
+
+
+func _render(model: Tutorial, anim: Dictionary) -> Probe:
+	var probe := Probe.new()
+	Lesson.new().draw(probe, model, anim)
+	return probe
+
+
+func _texts(probe: Probe) -> Array[String]:
+	var result: Array[String] = []
+	for entry in probe.texts:
+		result.append(String(entry.text))
+	return result
+
+
+func _angular(points: PackedVector2Array, closed: bool) -> bool:
+	var count := points.size() if closed else points.size() - 1
+	for i in count:
+		var step := points[(i + 1) % points.size()] - points[i]
+		if step.length() < 0.001:
+			continue
+		var degrees := fposmod(rad_to_deg(step.angle()), 45.0)
+		if minf(degrees, 45.0 - degrees) > 0.01:
+			return false
+	return true
+
+
+func _boards() -> Array[Tutorial]:
+	var boards: Array[Tutorial] = []
+	for stage in 7:
+		var model := Tutorial.new()
+		model.stage_index = stage
+		model._reset_stage()
+		boards.append(model)
+	var leak := Tutorial.new()
+	leak.stage_index = 4
+	leak._reset_stage()
+	leak.inspect_floor()
+	boards.append(leak)
+	var both := Tutorial.new()
+	both.stage_index = 6
+	both._reset_stage()
+	for node in [[0, 2], [1, 3], [7, 1]]:
+		for tap in node[1]:
+			both.tap_node(int(node[0] / 3.0), node[0] % 3)
+	both.inspect_floor()
+	boards.append(both)
+	var passed := Tutorial.new()
+	passed.tap_node(1, 1)
+	boards.append(passed)
+	var done := Tutorial.new()
+	done.stage_index = 6
+	done._reset_stage()
+	done.skip_graduation()
+	boards.append(done)
+	return boards
+
+
+func _test_angular_geometry() -> void:
+	for model in _boards():
+		for time in [0.0, 0.37, 1.1]:
+			for reduced in [true, false]:
+				var probe := _render(model, _anim(time, reduced, {"routes": _routes(model), "leak_age": time + 0.5, "since_success": time * 0.5, "since_talk": time}))
+				for polygon in probe.polygons:
+					_expect(_angular(polygon, true), "lesson polygon edges are 0, 45 or 90 degrees (%s)" % model.definition().id)
+				for stroke in probe.strokes:
+					_expect(_angular(stroke, false), "lesson strokes are 0, 45 or 90 degrees (%s)" % model.definition().id)
+
+
+func _bounds(points: PackedVector2Array) -> Rect2:
+	var rect := Rect2(points[0], Vector2.ZERO)
+	for point in points:
+		rect = rect.expand(point)
+	return rect
+
+
+func _has_plate(probe: Probe, rect: Rect2) -> bool:
+	for polygon in probe.polygons:
+		var bounds := _bounds(polygon)
+		if bounds.position.is_equal_approx(rect.position) and bounds.size.is_equal_approx(rect.size):
+			return true
+	return false
+
+
+func _test_plates_are_hit_areas() -> void:
+	_expect(View.HOME_RECT == Lesson.px(Lesson.HOME), "home hit area is its plate")
+	_expect(View.LESSON_MUTE_RECT == Lesson.px(Lesson.MUTE), "audio hit area is its plate")
+	_expect(View.PRIMARY_RECT == Lesson.px(Lesson.PRIMARY) and View.PRIMARY_RECT.size == Vector2(356, 64), "bottom button hit area is its 356 x 64 plate")
+	_expect(View.SECONDARY_RECT == Lesson.px(Lesson.SECONDARY), "skip hit area is its plate")
+	var start := _render(Tutorial.new(), _anim())
+	var practice := Tutorial.new()
+	practice.stage_index = 6
+	practice._reset_stage()
+	var final := _render(practice, _anim())
+	for rect in [View.HOME_RECT, View.LESSON_MUTE_RECT, View.PRIMARY_RECT]:
+		_expect(_has_plate(start, rect), "a drawn plate has exactly the hit area %s" % rect)
+	_expect(_has_plate(final, View.SECONDARY_RECT), "the drawn skip plate is its hit area")
+	_expect(not _has_plate(start, View.SECONDARY_RECT), "no skip plate outside the optional practice")
+	for node in 9:
+		var center := Lesson.socket_center(node) * 2.0
+		for corner in [Vector2(-45.9, -45.9), Vector2(45.9, -45.9), Vector2(-45.9, 45.9), Vector2(45.9, 45.9), Vector2.ZERO]:
+			_expect(Lesson.node_at(center + corner) == node, "the whole 92 px cell taps connection box %d" % node)
+	for outside in [Vector2(55, 396), Vector2(334, 396), Vector2(194, 257), Vector2(194, 535)]:
+		_expect(Lesson.node_at(outside) == -1, "taps outside the board's cells are ignored")
+
+
+func _test_latest_utterance_only() -> void:
+	var model := Tutorial.new()
+	var bubble := Lesson.px(Lesson.BUBBLE)
+	for step in 3:
+		var probe := _render(model, _anim())
+		var spoken: Array[String] = []
+		for entry in probe.texts:
+			if bubble.has_point(entry.position):
+				spoken.append(String(entry.text))
+		_expect(spoken == Array(String(model.utterance().text).split("\n")), "the bubble holds exactly the latest utterance (%s)" % model.utterance().kind)
+		if step == 0:
+			model.tap_node(0, 0)
+		else:
+			model.tap_node(1, 1)
+	var texts := _texts(_render(Tutorial.new(), _anim()))
+	_expect(not texts.has("わかった") and not texts.has("点滅を止めて、音楽を楽しもう。"), "no dialogue button or extra caption")
+
+
+func _test_inspection_presentation() -> void:
+	var leak := Tutorial.new()
+	leak.stage_index = 4
+	leak._reset_stage()
+	leak.inspect_floor()
+	var routes := _routes(leak)
+	_expect(routes.size() == 1 and routes[0].qubits == [1, 4, 7], "the trap's route is its red residual chain")
+	# Reduced motion: every label of the final explanation at once, unchanged over time.
+	var still := _render(leak, _anim(0.0, true, {"routes": routes, "leak_age": 0.0}))
+	var later := _render(leak, _anim(5.0, true, {"routes": routes, "leak_age": 0.0}))
+	_expect(str(still.log) == str(later.log), "reduced-motion lessons are static")
+	var texts := _texts(still)
+	_expect(texts.count("2") == 2 and texts.count("1") == 1, "each watching floor shows 2 and the inspection line shows 1")
+	_expect(texts.has("破線は元の故障、実線は自分の配線"), "the dashed original fault is explained")
+	# With motion the explanation builds up within two seconds, then settles.
+	var early := _texts(_render(leak, _anim(0.1, false, {"routes": routes, "leak_age": 0.1})))
+	_expect(early.count("2") == 2 and not early.has("1") and not early.has("破線は元の故障、実線は自分の配線"), "leftovers and the floors' 2 come first")
+	var middle := _texts(_render(leak, _anim(1.0, false, {"routes": routes, "leak_age": 1.0})))
+	_expect(middle.has("1") and not middle.has("破線は元の故障、実線は自分の配線"), "then the route and the inspection line's count")
+	var settled := _texts(_render(leak, _anim(2.1, false, {"routes": routes, "leak_age": 2.1})))
+	_expect(settled.has("破線は元の故障、実線は自分の配線"), "finally the cracks and the original fault")
+	# Once lesson 5 has shown the fault, a repeated leak keeps it visible
+	# from the first frame instead of hiding it for the build-up.
+	for tap in 4:
+		leak.tap_node(0, 0)
+	leak.inspect_floor()
+	_expect(leak.leak_count == 2, "fixture: a second leak in lesson 5")
+	var again := _texts(_render(leak, _anim(0.1, false, {"routes": _routes(leak), "leak_age": 0.1})))
+	_expect(again.has("破線は元の故障、実線は自分の配線"), "the repair keeps the dashed fault through a repeated leak")
+	# Both colours leaking show both explanations, not one colour.
+	var both := Tutorial.new()
+	both.stage_index = 6
+	both._reset_stage()
+	for node in [[0, 2], [1, 3], [7, 1]]:
+		for tap in node[1]:
+			both.tap_node(int(node[0] / 3.0), node[0] % 3)
+	both.inspect_floor()
+	_expect(both.inspection.red_crossing and both.inspection.blue_crossing, "fixture leaks in both colours")
+	var both_routes := _routes(both)
+	_expect(both_routes.size() == 2, "both colours get a route")
+	var probe := _render(both, _anim(0.0, true, {"routes": both_routes}))
+	var counts := 0
+	for entry in probe.texts:
+		counts += 1 if entry.text == "1" else 0
+	_expect(counts == 2, "both inspection lines show their odd count")
+	var colors := {}
+	for entry in probe.log:
+		if entry[0] == "polyline" and entry[3] >= 3.9:
+			colors[entry[2].to_html(false)] = true
+	_expect(colors.has(Lesson.RED_HI.to_html(false)) and colors.has(Lesson.BLUE_HI.to_html(false)), "red and blue leak routes are both drawn")
+	# Before any inspection nothing is revealed.
+	var hidden := Tutorial.new()
+	hidden.stage_index = 4
+	hidden._reset_stage()
+	var unrevealed := _texts(_render(hidden, _anim()))
+	_expect(not unrevealed.has("破線は元の故障、実線は自分の配線") and not unrevealed.has("2"), "no fault reveal or counts before the inspection")
+
+
+func _tap(view, point: Vector2, touch := true) -> void:
+	var event: InputEvent
+	if touch:
+		event = InputEventScreenTouch.new()
+		event.pressed = true
+	else:
+		event = InputEventMouseButton.new()
+		event.button_index = MOUSE_BUTTON_LEFT
+		event.pressed = true
+	event.position = point
+	view._gui_input(event)
+	var release: InputEvent = event.duplicate()
+	release.pressed = false
+	view._gui_input(release)
+
+
+func _run() -> void:
+	_test_angular_geometry()
+	_test_plates_are_hit_areas()
+	_test_latest_utterance_only()
+	_test_inspection_presentation()
+	var view := View.new()
+	root.add_child(view)
+	view.size = Vector2(390, 844)
+	view.reduced_motion = true
+	await process_frame
+	view._open_tutorial()
+	view._navigation_guard_until = 0
+	view._publish_semantics()
+	# Native touch and mouse at several viewport scales: one tap, one step.
+	for size in [Vector2(390, 844), Vector2(1170, 2532), Vector2(412, 915), Vector2(1440, 900), Vector2(844, 390), Vector2(320, 568)]:
+		view.size = size
+		view._update_transform()
+		for touch in [true, false]:
+			var before: int = view.model.corrections[0]
+			_tap(view, view._offset + Lesson.socket_center(0) * 2.0 * view._scale, touch)
+			_expect(view.model.corrections[0] == (before + 1) % 4, "one %s tap is one wire step at %s" % ["touch" if touch else "mouse", size])
+	while view.model.corrections[0] != 0:
+		view._handle_design_tap(Lesson.socket_center(0) * 2.0)
+	view.size = Vector2(390, 844)
+	view._update_transform()
+	# A disabled Continue does nothing; the pass enables it.
+	var count: int = view.model.trace.size()
+	view._handle_design_tap(View.PRIMARY_RECT.get_center())
+	_expect(view.model.trace.size() == count and view.model.stage_index == 0, "disabled Continue is inert")
+	view._handle_design_tap(Lesson.socket_center(4) * 2.0)
+	view._publish_semantics()
+	_expect(view.model.can_continue() and view._success_age == 0.0, "the solving tap passes and celebrates once")
+	view._handle_design_tap(View.PRIMARY_RECT.position)
+	view._publish_semantics()
+	_expect(view.model.stage_index == 1, "Continue's plate corner advances")
+	# Mute is shared with the title and persists.
+	var muted: bool = view._muted
+	view._handle_design_tap(View.LESSON_MUTE_RECT.end - Vector2(0.5, 0.5))
+	_expect(view._muted != muted, "the lesson audio plate toggles the shared mute")
+	view._show_title()
+	view._navigation_guard_until = 0
+	view._handle_design_tap(View.Title.MUTE_RECT.get_center())
+	_expect(view._muted == muted, "the title toggles the same setting back")
+	view._open_tutorial()
+	view._navigation_guard_until = 0
+	# Rapid input during the inspection presentation cancels the stale result.
+	view.reduced_motion = false
+	view.model.stage_index = 4
+	view.model._reset_stage()
+	view.model._record("next_stage", {})
+	view._publish_semantics()
+	view._handle_design_tap(View.PRIMARY_RECT.get_center())
+	view._publish_semantics()
+	_expect(view._leaks.active and view._leak_age == 0.0 and view._leak_routes.size() == 1, "calling the foreman starts the leak presentation")
+	view._handle_design_tap(Lesson.socket_center(1) * 2.0)
+	view._publish_semantics()
+	_expect(not view._leaks.active and view._leak_routes.is_empty() and view.model.inspection.is_empty(), "a tap during the presentation cancels the stale result")
+	_expect(view.model.fault_revealed() and view.model.utterance().kind == "mistake", "the board stays editable with the lesson's dashed hint")
+	for tap in 3:
+		view._handle_design_tap(Lesson.socket_center(1) * 2.0)
+	view._publish_semantics()
+	_expect(view.model.can_call_foreman() and not view._leaks.active, "returning to the trap needs another call")
+	view._handle_design_tap(View.PRIMARY_RECT.get_center())
+	view._publish_semantics()
+	_expect(view._leaks.active and view._leak_age == 0.0 and view._leak_sound_starts <= 2, "a fresh call starts a fresh presentation")
+	view._handle_design_tap(View.PRIMARY_RECT.get_center())
+	view._publish_semantics()
+	_expect(not view.model.passed() and view._leaks.active, "calling again on the same leaking board does nothing")
+	view._audio.stop()
+	view._lamp_audio.stop()
+	view.queue_free()
+	await process_frame
+	await create_timer(0.2).timeout
+	if failures.is_empty():
+		print("PASS: lesson geometry, plates and hit areas, one-step input at any scale, latest utterance, inspection presentation and stale-result cancellation")
+	else:
+		for failure in failures:
+			push_error(failure)
+	quit(0 if failures.is_empty() else 1)

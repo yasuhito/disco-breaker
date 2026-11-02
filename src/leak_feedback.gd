@@ -11,7 +11,7 @@ func observe(state: Dictionary) -> String:
 		return ""
 	var previous := _previous
 	_previous = state.duplicate(true)
-	var failed: bool = state.result_visible and state.floor_dark and not state.inspection.is_empty() and not bool(state.inspection.get("safe", true))
+	var failed: bool = state.inspected and state.floor_dark and not bool(state.inspection.get("safe", true))
 	var changed_floor: bool = not previous.is_empty() and (state.stage_id != previous.stage_id or state.boundary_phase != previous.boundary_phase or state.finished != previous.finished or state.last_action.action == "restart")
 	if changed_floor or not failed:
 		var was_active := active
@@ -76,11 +76,3 @@ static func route(faces: Array, support: PackedInt32Array, size: int, vertical: 
 	var last := points[-1]
 	points.append(Vector2(last.x, size - 0.04) if vertical else Vector2(size - 0.04, last.y))
 	return {"qubits": qubits, "checks": checks, "points": points}
-
-
-# Center the original-fault ghost on the same qubit and axis as its correction.
-static func ghost_segment(center: Vector2, radius: float, component: int, even: bool) -> PackedVector2Array:
-	var direction := Vector2(radius * 0.58, radius * 0.58 * (1 if even else -1))
-	if component == 2:
-		direction.y *= -1.0
-	return PackedVector2Array([center - direction, center + direction])

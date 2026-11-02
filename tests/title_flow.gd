@@ -30,7 +30,7 @@ func _run() -> void:
 	view._handle_design_tap(Vector2(195, 675))
 	view._handle_design_tap(Vector2(195, 309))
 	_expect(view.semantic_state() == initial, "disabled repair and decorative floor cannot change tutorial")
-	_expect(not view.inject_action({"type": "confirm"}), "hidden tutorial cannot accept injected input")
+	_expect(not view.inject_action({"type": "tap", "row": 1, "column": 1}), "hidden tutorial cannot accept injected input")
 	var plate: Rect2 = View.Title.TUTORIAL_RECT
 	var start: Rect2 = View.Title.REPAIR_RECT
 	view._handle_design_tap(Vector2(plate.position.x - 0.5, 780))
@@ -43,34 +43,36 @@ func _run() -> void:
 	_expect(view.semantic_state() == initial, "taps outside the drawn tutorial plate, in the gap or on the disabled plate do nothing")
 	# The plate's bottom lip is part of the button.
 	view._handle_design_tap(Vector2(195, plate.end.y - 0.5))
-	view._handle_design_tap(Vector2(195, 793))
-	_expect(not view.at_title and view.model.dialogue_visible, "double entry cannot dismiss lesson dialogue")
+	_expect(not view.at_title and view.model.stage_index == 0 and not view.model.touched, "the tutorial opens on an editable first lesson")
 	view._navigation_guard_until = 0
-	await process_frame
-	await process_frame
-	view._handle_design_tap(Vector2(195, 793))
-	view._handle_design_tap(Vector2(100, 214))
+	view._handle_design_tap(Vector2(194, 396))
 	view._publish_semantics()
+	_expect(view.model.can_continue(), "the first lesson passes in one tap, without a dialogue")
 	var playing: Dictionary = view.model.semantic_state()
-	view._handle_design_tap(Vector2(38, 36))
+	view._handle_design_tap(Vector2(34, 34))
 	_expect(view.at_title and not view._audio.playing and not view._lamp_audio.playing, "home stops tutorial sound")
+	# Entry and Continue overlap: a rapid second tap cannot skip a lesson.
 	view._navigation_guard_until = 0
-	view._handle_design_tap(Vector2(195, 775))
-	_expect(view.model.semantic_state() == playing, "continue preserves corrections, dialogue, inspection and trace")
+	view._handle_design_tap(Vector2(195, 780))
+	view._handle_design_tap(Vector2(195, 760))
+	_expect(not view.at_title and view.model.semantic_state() == playing, "continue preserves corrections, inspection and trace; a double tap cannot advance")
+	_expect(view._talk_age == 0.0 and view._success_age >= View.SETTLED, "resuming speaks the latest line again but never replays the success")
 	# A revealed leak can be left/resumed without replaying the discharge.
 	view.model.stage_index = 4
 	view.model._reset_stage()
 	view.model._record("next_stage", {})
 	view._publish_semantics()
-	view.model.confirm_dialogue()
+	view._navigation_guard_until = 0
+	view._handle_design_tap(Vector2(194, 760))
 	view._publish_semantics()
+	_expect(view._leaks.active and view._leak_age == 0.0 and not view.model.passed(), "calling the foreman on the trap reveals a leak, not a pass")
 	var leak_count: int = view._leak_sound_starts
 	view._show_title()
 	view._publish_semantics()
 	view._open_tutorial()
 	view._publish_semantics()
 	_expect(view._leak_sound_starts == leak_count and view._leaks.active, "resuming leak keeps explanation without replaying sound")
-	_expect(view._leak_age >= 2.0, "resumed leak is a settled static explanation")
+	_expect(view._leak_age >= View.SETTLED, "resumed leak is a settled static explanation")
 	view.model.stage_index = 6
 	view.model._reset_stage()
 	view.model.skip_graduation()
@@ -78,18 +80,24 @@ func _run() -> void:
 	view._show_title()
 	view._open_tutorial()
 	view._publish_semantics()
-	_expect(not view.model.finished and view.model.stage_index == 0 and view.model.dialogue_visible, "completed/skip return then replay restarts with dialogue")
+	_expect(not view.model.finished and view.model.stage_index == 0 and not view.model.touched, "completed/skip return then replay restarts all seven lessons")
 	_expect(view._rewards.kind.is_empty() and not view._leaks.active, "replay clears reward, leak and original error reveal")
 	view.model.stage_index = 6
 	view.model._reset_stage()
 	view.model.skip_graduation()
 	view._publish_semantics()
 	view._navigation_guard_until = 0
-	await process_frame
-	await process_frame
-	view._handle_design_tap(Vector2(195, 793))
-	view._handle_design_tap(Vector2(195, 793))
-	_expect(view.model.stage_index == 0 and view.model.dialogue_visible, "double Replay cannot dismiss the first lesson")
+	view._handle_design_tap(Vector2(195, 760))
+	view._handle_design_tap(Vector2(194, 396))
+	view._handle_design_tap(Vector2(195, 760))
+	_expect(view.model.stage_index == 0 and not view.model.touched and not view.model.finished, "a rapid second tap after Replay cannot act on the first lesson")
+	view.model.skip_graduation()
+	view._navigation_guard_until = 0
+	view.model.stage_index = 6
+	view.model._reset_stage()
+	view.model.skip_graduation()
+	view._handle_design_tap(View.SECONDARY_RECT.get_center())
+	_expect(view.at_title and view.model.finished, "the completion screen returns to the title")
 	# Stopped playback leaves the audio server on its own mixing thread; give
 	# it real time so no stream is still referenced at exit.
 	view._audio.stop()

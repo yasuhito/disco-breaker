@@ -16,32 +16,31 @@ func _init() -> void:
 	quit(0 if model.finished else 1)
 
 
+# Every lesson through the public commands. Lesson 5 is first inspected as
+# the untouched trap (a leak, not a pass), then repaired and inspected again.
 func _solve_all(model: Tutorial) -> void:
-	model.confirm_dialogue()
 	model.tap_node(1, 1)
 	model.next_stage()
-	model.confirm_dialogue()
 	model.tap_node(1, 1)
 	model.tap_node(1, 1)
 	model.next_stage()
-	model.confirm_dialogue()
-	model.tap_node(1, 1)
-	model.tap_node(1, 1)
-	model.tap_node(1, 1)
+	for tap in 3:
+		model.tap_node(1, 1)
 	model.next_stage()
-	model.confirm_dialogue()
 	model.inspect_floor()
 	model.next_stage()
-	model.confirm_dialogue()
+	model.inspect_floor()
+	for tap in 3:
+		model.tap_node(0, 1)
+		model.tap_node(2, 1)
+	model.tap_node(1, 1)
+	model.inspect_floor()
 	model.next_stage()
-	model.confirm_dialogue()
 	model.tap_node(0, 0)
 	model.next_stage()
-	model.confirm_dialogue()
 	model.tap_node(0, 2)
 	model.tap_node(0, 2)
 	model.next_stage()
-	model.confirm_dialogue()
 	model.tap_node(1, 1)
 	model.tap_node(0, 2)
 	model.tap_node(0, 2)

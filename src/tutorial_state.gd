@@ -8,15 +8,41 @@ const RED := 1
 const BLUE := 2
 const BOTH := 3
 
+# The foreman's lines for a dark floor the inspection reported as leaking,
+# chosen by the colour(s) the inspection found.
+const LEAK_COLOR := {"red": "赤い線が上から下へ。", "blue": "青い線が左から右へ。", "both": "赤も青も抜けている。"}
+const LEAK_AUTO := "暗いけど漏電！\n"
+const LEAK_CALL := "漏電あり！\n"
+const LEAK_AGAIN := "まだ漏電。\n"
+# Hints for a lit floor, used only while they describe the actual board.
+const LIT_HINTS := {
+	"red_one_tap": "光る床が残っている。\n中央を押してみよう。",
+	"blue_two_taps": "赤になった。\nもう1回で青になる。",
+	"combined_three_taps": "まだ片方だけ。\n中央をもう1回。",
+}
+const LIT_GENERIC := "光る床が残っている。"
+const DONE_TEXT := "全7レッスン修了！\nこれで踊る準備は万全だ。"
+const SKIPPED_TEXT := "チュートリアル終了。\n自由練習はまた今度。"
+
 var stage_index := 0
 var boundary_phase := 0
-var dialogue_visible := true
-var result_visible := false
 var finished := false
+var skipped := false
 var corrections: PackedInt32Array = PackedInt32Array()
+# The inspection of the current board. Any wiring change clears it, so a
+# verdict never outlives the board it was computed for.
 var inspection: Dictionary = {}
+# The player has changed this floor since it was set up.
+var touched := false
+# Inspections on this floor that reported a leak (lesson 5 keeps the
+# original-fault reveal for the repair once one has).
+var leak_count := 0
+var leak_seen: bool:
+	get:
+		return leak_count > 0
 var trace: Array[Dictionary] = []
 var _sequence := 0
+var _stage_cache: Dictionary = {}
 
 
 func _init() -> void:
@@ -24,44 +50,60 @@ func _init() -> void:
 	_record("launch", {})
 
 
+# The seven fixed lessons. "inspect" is "auto" when a dark floor is inspected
+# immediately, "call" when the player must call the foreman. Definitions
+# depend only on the boundary phase and are built once per phase.
 func stages() -> Array[Dictionary]:
+	if not _stage_cache.has(boundary_phase):
+		_stage_cache[boundary_phase] = _build_stages()
+	return _stage_cache[boundary_phase]
+
+
+func _build_stages() -> Array[Dictionary]:
 	var definitions: Array[Dictionary] = [
 		{
-			"id": "red_one_tap", "title": "赤は1回", "size": 3,
-			"coach": "中央を1回タップ。\n赤い配線にしよう！",
+			"id": "red_one_tap", "title": "赤い配線", "size": 3, "inspect": "auto",
 			"hidden": {4: RED}, "preset": {}, "target": 4,
+			"lines": {"open": "中央を1回タップ。\n赤い配線にしよう！", "ok": "いいぞ！ 点滅が消えた。"},
 		},
 		{
-			"id": "blue_two_taps", "title": "青は2回", "size": 3,
-			"coach": "中央を2回タップ。\n赤から青に変わるよ。",
+			"id": "blue_two_taps", "title": "青い配線", "size": 3, "inspect": "auto",
 			"hidden": {4: BLUE}, "preset": {}, "target": 4,
+			"lines": {"open": "中央を2回タップ。\n赤から青に変わるよ。", "ok": "いいぞ！ 青で直った。"},
 		},
 		{
-			"id": "combined_three_taps", "title": "赤と青は3回", "size": 3,
-			"coach": "中央を3回タップ。\n赤と青を交差させよう！",
+			"id": "combined_three_taps", "title": "赤と青を交差", "size": 3, "inspect": "auto",
 			"hidden": {4: BOTH}, "preset": {}, "target": 4,
+			"lines": {"open": "中央を3回タップ。\n赤と青を交差させよう！", "ok": "いいぞ！ 両方そろった。"},
 		},
 		{
-			"id": "foreman_inspection", "title": "親方の検査", "size": 3,
-			"coach": "全部消えても安全とは\n限らない。親方を呼んで\n検査してもらおう。",
+			"id": "foreman_inspection", "title": "親方の検査", "size": 3, "inspect": "call",
 			"hidden": {4: BOTH}, "preset": {4: BOTH}, "target": -1,
+			"lines": {"open": "床は全部暗い。\nでも安全かは別の話。", "lit": "光る床がある。\n暗くしてから呼んでね。",
+				"dark": "暗くなった。\n親方を呼ぼう。", "ok": "検査合格！\n漏電はないぞ。"},
 		},
 		{
-			"id": "crossing_trap", "title": "見えない漏電", "size": 3,
-			"coach": "暗い床でも漏電する。\nこの床を検査しよう。",
+			"id": "crossing_trap", "title": "見えない漏電", "size": 3, "inspect": "call",
 			"hidden": {4: RED}, "preset": {1: RED, 7: RED}, "target": -1,
+			"lines": {"open": "これも全部暗い。\n親方を呼ぼう。",
+				"explain": "漏電あり！床は2本で暗い。\n赤が上から下へ抜けた。\n上下を外し、破線に赤を。",
+				"lit": "光る床がある。\n暗くしてから呼んでね。", "lit_seen": "光る床がある。\n破線と同じにしよう。",
+				"dark": "これも全部暗い。\n親方を呼ぼう。", "dark_seen": "暗くなった。\nもう一度親方を呼ぼう。",
+				"ok": "検査合格！\n漏電が直った。"},
 		},
 		{
-			"id": "boundary_single", "title": "端の赤" if boundary_phase == 0 else "端の青", "size": 3,
-			"coach": "内側は2枚が切り替わる。\n端なら1枚だけのことも。\n左上を1回タップ。" if boundary_phase == 0 else "次は端の青い床。\n右上を2回タップ。\n赤から青に変わるよ。",
+			"id": "boundary_single", "title": "端の床", "size": 3, "inspect": "auto",
 			"hidden": {0: RED} if boundary_phase == 0 else {2: BLUE},
 			"preset": {}, "target": 0 if boundary_phase == 0 else 2,
-			"hint_taps": 1 if boundary_phase == 0 else 2,
+			"lines": {"open": "内側は2枚が切り替わる。\n端なら1枚だけのことも。\n左上を1回タップ。", "ok": "いいぞ！ 端は1枚だけ。"}
+				if boundary_phase == 0 else
+				{"open": "次は端の青い床。\n右上を2回タップ。\n赤から青に変わるよ。", "ok": "いいぞ！ 端の青も直った。"},
 		},
 		{
-			"id": "graduation_3x3", "title": "自由練習 3 × 3", "size": 3,
-			"coach": "小さな床で練習しよう。\n赤と青の点滅を止めよう！",
+			"id": "graduation_3x3", "title": "自由練習", "size": 3, "inspect": "call",
 			"hidden": {4: RED, 2: BLUE}, "preset": {}, "target": -1,
+			"lines": {"open": "小さな床で練習しよう。\n赤と青の点滅を止めよう！", "lit": "点滅はまだ残っている。",
+				"dark": "暗くなった。\n親方を呼ぼう。", "ok": "卒業検査合格！"},
 		},
 	]
 
@@ -116,46 +158,44 @@ func definition() -> Dictionary:
 	return stages()[stage_index]
 
 
-func confirm_dialogue() -> void:
-	if finished:
-		restart()
-		return
-	if not dialogue_visible:
-		return
-	dialogue_visible = false
-	_record("confirm_dialogue", {})
-	if stage_index == 4:
-		inspect_floor()
+func auto_inspects() -> bool:
+	return String(definition().inspect) == "auto"
 
 
+# The board is editable at once and stays editable after any verdict.
 func tap_node(row: int, column: int) -> bool:
-	if dialogue_visible or result_visible or finished:
+	if finished:
 		return false
 	var size: int = definition().size
 	if row < 0 or row >= size or column < 0 or column >= size:
 		return false
 	var node := row * size + column
 	corrections[node] = (corrections[node] + 1) % 4
+	touched = true
+	inspection = {}
 	_record("tap_node", {"row": row, "column": column, "state": corrections[node]})
-	if stage_index <= 2 and is_dark():
-		inspection = _inspect_residual()
-		result_visible = true
-		_record("lesson_solved", {"stage": definition().id, "safe": inspection.safe})
-	if definition().id == "boundary_single" and is_dark():
-		inspect_floor()
+	if auto_inspects() and is_dark():
+		_inspect(true)
 	return true
 
 
 func can_call_foreman() -> bool:
-	return not dialogue_visible and not result_visible and is_dark() and stage_index >= 3
+	return not finished and not auto_inspects() and is_dark() and inspection.is_empty()
 
 
 func inspect_floor() -> Dictionary:
-	if stage_index != 4 and not can_call_foreman():
+	if not can_call_foreman():
 		return {}
+	return _inspect(false)
+
+
+func _inspect(automatic: bool) -> Dictionary:
 	inspection = _inspect_residual()
-	result_visible = true
-	_record("inspect", inspection)
+	if not bool(inspection.safe):
+		leak_count += 1
+	var payload := inspection.duplicate(true)
+	payload["auto"] = automatic
+	_record("inspect", payload)
 	return inspection
 
 
@@ -169,44 +209,50 @@ func _inspect_residual() -> Dictionary:
 		PackedInt32Array(d.witness_red), PackedInt32Array(d.witness_blue))
 
 
-func next_stage() -> void:
-	if not result_visible:
-		return
-	# Only the intentional trap advances after a failed inspection.
-	if stage_index != 4 and not bool(inspection.get("safe", false)):
-		result_visible = false
-		inspection = {}
-		_record("retry_boundary" if definition().id == "boundary_single" else "retry_floor", {})
-		return
-	if definition().id == "boundary_single":
-		if boundary_phase == 0:
-			boundary_phase = 1
-			_reset_stage()
-			_record("boundary_blue", {})
-			return
+# Passing needs a dark floor AND an explicitly safe inspection of this board.
+func passed() -> bool:
+	return not finished and not inspection.is_empty() and bool(inspection.safe) and is_dark()
+
+
+func can_continue() -> bool:
+	return passed()
+
+
+func next_stage() -> bool:
+	if not can_continue():
+		return false
+	if definition().id == "boundary_single" and boundary_phase == 0:
+		boundary_phase = 1
+		_reset_stage()
+		_record("boundary_blue", {})
+		return true
 	if stage_index == stages().size() - 1:
 		finished = true
-		result_visible = false
-		dialogue_visible = true
+		inspection = {}
 		_record("tutorial_complete", {})
-		return
+		return true
 	stage_index += 1
 	_reset_stage()
 	_record("next_stage", {"stage": definition().id})
+	return true
 
 
-func skip_graduation() -> void:
-	if definition().id == "graduation_3x3" and not finished:
-		finished = true
-		result_visible = false
-		dialogue_visible = true
-		_record("skip_graduation", {})
+# Skipping the optional practice ends the tutorial without a pass.
+func skip_graduation() -> bool:
+	if definition().id != "graduation_3x3" or finished:
+		return false
+	finished = true
+	skipped = true
+	inspection = {}
+	_record("skip_graduation", {})
+	return true
 
 
 func restart() -> void:
 	stage_index = 0
 	boundary_phase = 0
 	finished = false
+	skipped = false
 	_reset_stage()
 	_record("restart", {})
 
@@ -223,6 +269,89 @@ func lit_blue_checks() -> Array[int]:
 	return _lit_checks(BLUE)
 
 
+# The original fault is shown only after an inspection found a leak: on the
+# leaking board itself, and in lesson 5 for the rest of the repair.
+func fault_revealed() -> bool:
+	if finished:
+		return false
+	if not inspection.is_empty() and not bool(inspection.safe):
+		return true
+	return leak_seen and definition().id == "crossing_trap"
+
+
+func progress() -> float:
+	if finished:
+		return 1.0
+	return (stage_index + 0.5 * boundary_phase) / float(stages().size())
+
+
+# The foreman's single latest utterance, derived from the current board.
+func utterance() -> Dictionary:
+	if finished:
+		return {"kind": "done", "text": SKIPPED_TEXT if skipped else DONE_TEXT}
+	var lines: Dictionary = definition().lines
+	if passed():
+		return {"kind": "safe", "text": lines.ok}
+	if not inspection.is_empty():
+		return {"kind": "unsafe", "text": _leak_line()}
+	if not touched:
+		return {"kind": "start", "text": lines.open}
+	if not is_dark():
+		return {"kind": "mistake", "text": _lit_line()}
+	var dark := String(lines.get("dark_seen" if leak_seen and lines.has("dark_seen") else "dark", lines.open))
+	return {"kind": "ready", "text": dark}
+
+
+func _leak_line() -> String:
+	var d := definition()
+	var red := bool(inspection.get("red_crossing", false))
+	var blue := bool(inspection.get("blue_crossing", false))
+	var color: String = LEAK_COLOR["both" if red and blue else ("red" if red else "blue")]
+	if auto_inspects():
+		return LEAK_AUTO + color
+	if d.id == "crossing_trap":
+		# The full explanation describes exactly the untouched trap.
+		if leak_count == 1 and _matches(d.preset):
+			return String(d.lines.explain)
+		if leak_count > 1:
+			return LEAK_AGAIN + color
+	return LEAK_CALL + color
+
+
+# A specific hint only while it describes the actual board.
+func _lit_line() -> String:
+	var d := definition()
+	var lines: Dictionary = d.lines
+	if lines.has("lit"):
+		if lines.has("lit_seen") and leak_seen:
+			return String(lines.lit_seen)
+		return String(lines.lit)
+	var target: int = d.target
+	var others_clean := true
+	for node in corrections.size():
+		if node != target and corrections[node] != int(d.hidden.get(node, EMPTY)):
+			others_clean = false
+	var at_target := corrections[target] if target >= 0 else EMPTY
+	match String(d.id):
+		"red_one_tap":
+			if others_clean:
+				return LIT_HINTS.red_one_tap
+		"blue_two_taps":
+			if others_clean and at_target == RED:
+				return LIT_HINTS.blue_two_taps
+		"combined_three_taps":
+			if others_clean and at_target in [RED, BLUE]:
+				return LIT_HINTS.combined_three_taps
+	return LIT_GENERIC
+
+
+func _matches(wiring: Dictionary) -> bool:
+	for node in corrections.size():
+		if corrections[node] != int(wiring.get(node, EMPTY)):
+			return false
+	return true
+
+
 func semantic_state() -> Dictionary:
 	var d := definition()
 	var correction_values: Array[int] = []
@@ -230,21 +359,30 @@ func semantic_state() -> Dictionary:
 		correction_values.append(value)
 	var last_action: Dictionary = trace[-1].duplicate(true) if not trace.is_empty() else {}
 	return {
-		"schema": "disco-breaker-tutorial-state.v1",
+		"schema": "disco-breaker-tutorial-state.v2",
 		"stage": stage_index + 1,
 		"stage_id": d.id,
 		"stage_count": stages().size(),
 		"boundary_phase": boundary_phase,
+		"title": d.title,
 		"grid_size": d.size,
-		"dialogue_visible": dialogue_visible,
-		"result_visible": result_visible,
+		"inspection_mode": d.inspect,
+		"target": d.target,
 		"finished": finished,
+		"skipped": skipped,
 		"corrections": correction_values,
 		"lit_red": lit_red_checks(),
 		"lit_blue": lit_blue_checks(),
 		"floor_dark": is_dark(),
-		"can_call_foreman": can_call_foreman(),
+		"inspected": not inspection.is_empty(),
 		"inspection": inspection.duplicate(true),
+		"passed": passed(),
+		"can_call_foreman": can_call_foreman(),
+		"can_continue": can_continue(),
+		"fault_revealed": fault_revealed(),
+		"leak_seen": leak_seen,
+		"utterance": utterance(),
+		"progress": progress(),
 		"action_count": trace.size(),
 		"last_action": last_action,
 	}
@@ -263,9 +401,9 @@ func _reset_stage() -> void:
 	corrections.resize(d.size * d.size)
 	for key in d.preset:
 		corrections[int(key)] = int(d.preset[key])
-	dialogue_visible = true
-	result_visible = false
 	inspection = {}
+	touched = false
+	leak_count = 0
 
 
 func _lit_checks(component: int) -> Array[int]:

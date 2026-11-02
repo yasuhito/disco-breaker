@@ -19,13 +19,13 @@ func observe(state: Dictionary) -> String:
 		kind = ""
 		return "reset"
 	var cleared: bool = not previous.floor_dark and state.floor_dark
-	var passed: bool = state.result_visible and not previous.result_visible and state.floor_dark and bool(state.inspection.get("safe", false))
+	var passed: bool = state.passed and not previous.passed
 	if passed:
 		kind = "finale" if state.stage_id == "graduation_3x3" else "success"
 		success_count += 1
 	elif cleared:
 		kind = "settled"
-	elif not state.floor_dark or not state.result_visible and previous.result_visible:
+	elif not state.floor_dark or not state.passed and previous.passed:
 		kind = ""
 		return "reset"
 	else:
