@@ -12,6 +12,8 @@ const FONT := preload("res://assets/fonts/NotoSansJP-Regular.otf")
 const BOLD_FONT := preload("res://assets/fonts/NotoSansJP-Bold.tres")
 # Original synthesized bell chosen for lesson 1 (provenance: assets/sounds/README.md).
 const LESSON1_BELL := preload("res://assets/sounds/lesson1_success_bell.wav")
+# Original synthesized press chosen for the title's tutorial plate (same README).
+const TITLE_PRESS := preload("res://assets/sounds/title_tutorial_press.wav")
 
 const DESIGN_SIZE := Vector2(390, 844)
 # Hit areas are the lesson's drawn plates (design px).
@@ -24,6 +26,9 @@ const SETTLED := 10.0
 # Lesson 4's called inspection: the foreman traces the red line, then the
 # blue line (seconds), before his verdict is shown and Continue enabled.
 const COUNT_TIME := 1.6
+# An accepted title tutorial press: the plate goes down and back up over this
+# time (seconds), then the lesson opens. Reduced motion opens it at once.
+const PRESS_TIME := 0.15
 
 var model := Tutorial.new()
 var at_title := true
@@ -72,6 +77,12 @@ var _lamp_sound_starts := 0
 var _lamp_last_key := -1
 var _lamp_last_time := -1.0
 var _audio_unlocked := false
+# The title press has its own player, so nothing that stops lesson audio on
+# entry can cut it; only mute does.
+var _press_audio := AudioStreamPlayer.new()
+var _press_age := -1.0
+var _title_presses := 0
+var _press_sound_starts := 0
 
 
 func _ready() -> void:
@@ -85,6 +96,9 @@ func _ready() -> void:
 	add_child(_lamp_audio)
 	_audio.volume_db = -8.0
 	add_child(_audio)
+	_press_audio.volume_db = -8.0
+	_press_audio.stream = TITLE_PRESS
+	add_child(_press_audio)
 	var preferences := ConfigFile.new()
 	if preferences.load("user://audio.cfg") == OK:
 		_muted = bool(preferences.get_value("audio", "muted", false))
@@ -116,6 +130,13 @@ func _process(delta: float) -> void:
 		queue_redraw()
 	if counting and not _counting():
 		_finish_counting()
+	if _press_age >= 0.0:
+		_press_age += delta
+		queue_redraw()
+		if _press_age >= PRESS_TIME:
+			_press_age = -1.0
+			_open_tutorial()
+			_publish_semantics()
 	_tick_lamp_audio()
 
 
@@ -216,8 +237,9 @@ func _handle_design_tap(point: Vector2) -> void:
 	if Time.get_ticks_msec() < _navigation_guard_until:
 		return
 	if at_title:
-		if Title.TUTORIAL_RECT.has_point(point):
-			_open_tutorial()
+		# One press per accepted tap: further taps wait for the lesson to open.
+		if Title.TUTORIAL_RECT.has_point(point) and _press_age < 0.0:
+			_press_tutorial()
 		return
 	if HOME_RECT.has_point(point):
 		_show_title()
@@ -252,6 +274,23 @@ func _replay() -> void:
 	model.restart()
 	_navigation_guard_until = Time.get_ticks_msec() + 280
 	queue_redraw()
+
+
+func _press_tutorial() -> void:
+	_title_presses += 1
+	if not _muted and not AudioServer.is_bus_mute(0):
+		_press_audio.play()
+		_press_sound_starts += 1
+	if reduced_motion:
+		_open_tutorial()
+	else:
+		_press_age = 0.0
+		queue_redraw()
+
+
+# How far the title's tutorial plate is pushed in (0 at rest).
+func _title_press() -> float:
+	return sin(PI * _press_age / PRESS_TIME) if _press_age > 0.0 else 0.0
 
 
 func _open_tutorial() -> void:
@@ -306,7 +345,7 @@ func _draw() -> void:
 	if at_title:
 		draw_set_transform(_offset, 0.0, Vector2.ONE * _scale)
 		# The title paints its whole design area, including its own audio control.
-		_title_art.draw(self, _elapsed, reduced_motion, _tutorial_started, model.finished)
+		_title_art.draw(self, _elapsed, reduced_motion, _tutorial_started, model.finished, _title_press())
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		return
 	draw_set_transform(_offset, 0.0, Vector2.ONE * _scale)
@@ -436,6 +475,7 @@ func _toggle_mute() -> void:
 	_muted = not _muted
 	if _muted:
 		_audio.stop()
+		_press_audio.stop()
 		_lamp_audio.stop()
 		_lamp_gate.reset()
 	if OS.has_feature("web"):
@@ -451,6 +491,7 @@ func _publish_feedback() -> void:
 	if OS.has_feature("web"):
 		var feedback := {"kind": _rewards.kind, "event_count": _rewards.event_count,
 			"success_count": _rewards.success_count, "sound_starts": _sound_starts, "last_reward_sound": _last_reward_sound,
+			"title_presses": _title_presses, "title_press_sound_starts": _press_sound_starts, "title_pressing": _press_age >= 0.0,
 			"muted": _muted, "reduced_motion": reduced_motion,
 			"leak_active": _leaks.active and not at_title, "leak_events": _leaks.event_count,
 			"leak_sound_starts": _leak_sound_starts, "lamp_sound_starts": _lamp_sound_starts,

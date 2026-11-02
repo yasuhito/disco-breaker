@@ -99,10 +99,12 @@ func _run() -> void:
 	view.model.skip_graduation()
 	view._handle_design_tap(View.SECONDARY_RECT.get_center())
 	_expect(view.at_title and view.model.finished, "the completion screen returns to the title")
+	_test_title_press(view)
 	# Stopped playback leaves the audio server on its own mixing thread; give
 	# it real time so no stream is still referenced at exit.
 	view._audio.stop()
 	view._lamp_audio.stop()
+	view._press_audio.stop()
 	view.queue_free()
 	await process_frame
 	await create_timer(0.2).timeout
@@ -112,6 +114,101 @@ func _run() -> void:
 		for failure in failures:
 			push_error(failure)
 	quit(0 if failures.is_empty() else 1)
+
+
+# The title tutorial plate: one press sound and one short push per accepted
+# tap, then the lesson. Time is driven by hand (frames would advance it).
+func _test_title_press(view) -> void:
+	view.set_process(false)
+	view.reduced_motion = false
+	view._muted = false
+	view._navigation_guard_until = 0
+	var plate: Rect2 = View.Title.TUTORIAL_RECT
+	var presses: int = view._title_presses
+	var sounds: int = view._press_sound_starts
+	var rewards: int = view._sound_starts
+	_expect(view.at_title and view._title_press() == 0.0, "the title plate is at rest before a press")
+	var clicked := Time.get_ticks_msec()
+	view._handle_design_tap(plate.get_center())
+	_expect(view.at_title and view._title_presses == presses + 1 and view._press_sound_starts == sounds + 1 and view._press_audio.playing, "an accepted press plays the chosen sound once and stays on the title while the plate moves")
+	var touch := InputEventScreenTouch.new()
+	touch.pressed = true
+	touch.position = plate.get_center()
+	view._gui_input(touch)
+	view._handle_design_tap(plate.position)
+	_expect(view.at_title and view._title_presses == presses + 1 and view._press_sound_starts == sounds + 1, "rapid mouse and touch presses during the push are ignored")
+	view._process(View.PRESS_TIME * 0.5)
+	_expect(view.at_title and is_equal_approx(view._title_press(), 1.0), "the plate is fully in halfway through the press")
+	view.size = Vector2(1440, 900)
+	# Real time passes during the push; the guard must count from the entry.
+	OS.delay_msec(100)
+	view._process(View.PRESS_TIME * 0.5)
+	_expect(not view.at_title and view._title_press() == 0.0 and view._press_age < 0.0, "the lesson opens once the plate is back up, across a resize")
+	_expect(view._navigation_guard_until >= clicked + 100 + 280, "the navigation guard starts at the actual entry, not at the click")
+	var trace_size: int = view.model.trace.size()
+	view._handle_design_tap(Vector2(194, 396))
+	_expect(view.model.trace.size() == trace_size, "a tap right after the actual entry is still guarded")
+	view.size = Vector2(390, 844)
+	# Other buttons never play the press: home, lesson taps, mute, Replay.
+	view._navigation_guard_until = 0
+	view._handle_design_tap(Vector2(34, 34))
+	view._navigation_guard_until = 0
+	view._handle_design_tap(View.Title.MUTE_RECT.get_center())
+	view._handle_design_tap(View.Title.MUTE_RECT.get_center())
+	_expect(view._press_sound_starts == sounds + 1 and view._title_presses == presses + 1, "home and the audio plate never play the press")
+	# Resume: every accepted press sounds, and entry does not cut it.
+	view._handle_design_tap(plate.get_center())
+	view._process(View.PRESS_TIME + 0.001)
+	_expect(not view.at_title and view._press_sound_starts == sounds + 2 and view._press_audio.playing, "a resumed entry plays the press once and entering does not cut it")
+	view._navigation_guard_until = 0
+	view._handle_design_tap(Vector2(102, 304))
+	view._handle_design_tap(Vector2(34, 34))
+	_expect(view._press_sound_starts == sounds + 2, "lesson taps never play the press")
+	# Muted: the press still opens the lesson, silently; muting mid-press stops it.
+	view._navigation_guard_until = 0
+	view._toggle_mute()
+	view._handle_design_tap(plate.get_center())
+	view._process(View.PRESS_TIME + 0.001)
+	_expect(not view.at_title and view._title_presses == presses + 3 and view._press_sound_starts == sounds + 2, "a muted press opens the lesson without sound")
+	view._toggle_mute()
+	view._navigation_guard_until = 0
+	view._handle_design_tap(Vector2(34, 34))
+	view._navigation_guard_until = 0
+	view._handle_design_tap(plate.get_center())
+	_expect(view._press_audio.playing, "an unmuted press sounds")
+	view._handle_design_tap(View.Title.MUTE_RECT.get_center())
+	_expect(view._muted and not view._press_audio.playing and view.at_title, "muting during the push stops the press sound")
+	view._process(View.PRESS_TIME + 0.001)
+	view._toggle_mute()
+	_expect(not view.at_title, "the muted push still opens the lesson")
+	# Replay from the title after completion also presses once; the lesson's
+	# own Replay button does not.
+	view.model.stage_index = 6
+	view.model._reset_stage()
+	view.model.skip_graduation()
+	view._publish_semantics()
+	view._navigation_guard_until = 0
+	sounds = view._press_sound_starts
+	view._handle_design_tap(View.PRIMARY_RECT.get_center())
+	_expect(view.model.stage_index == 0 and not view.model.finished and view._press_sound_starts == sounds, "the lesson's Replay button keeps its own behaviour, without the press")
+	view.model.stage_index = 6
+	view.model._reset_stage()
+	view.model.skip_graduation()
+	view._navigation_guard_until = 0
+	view._handle_design_tap(View.SECONDARY_RECT.get_center())
+	_expect(view.at_title and view.model.finished, "completion returns to the title")
+	view._navigation_guard_until = 0
+	view._handle_design_tap(plate.get_center())
+	view._process(View.PRESS_TIME + 0.001)
+	_expect(not view.at_title and view.model.stage_index == 0 and not view.model.finished and view._press_sound_starts == sounds + 1, "replay from the title presses once and restarts the lessons")
+	# Reduced motion: no push, the lesson opens at once, and the press sounds.
+	view._navigation_guard_until = 0
+	view._handle_design_tap(Vector2(34, 34))
+	view.reduced_motion = true
+	view._navigation_guard_until = 0
+	view._handle_design_tap(plate.get_center())
+	_expect(not view.at_title and view._press_age < 0.0 and view._press_sound_starts == sounds + 2 and view._press_audio.playing, "reduced motion opens the lesson immediately and still plays the press")
+	_expect(view._sound_starts == rewards, "the press is not a reward sound")
 
 
 func _expect(condition: bool, description: String) -> void:

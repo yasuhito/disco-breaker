@@ -321,7 +321,9 @@ static func tile_center(column: int, row: int) -> Vector2:
 	return Vector2(9 + column * 44 + (22.0 if row % 2 else 0.0), FLOOR_ROW0 + row * 22)
 
 
-func draw(view, elapsed: float, reduced: bool, _started: bool, _finished: bool) -> void:
+# press (0..1) is how far the tutorial plate is pushed in while it is being
+# pressed; at rest (0) nothing extra is drawn.
+func draw(view, elapsed: float, reduced: bool, _started: bool, _finished: bool, press := 0.0) -> void:
 	var time := STILL_TIME if reduced else elapsed
 	_ensure_resources(view)
 	view.draw_mesh(_back_mesh, null)
@@ -336,7 +338,9 @@ func draw(view, elapsed: float, reduced: bool, _started: bool, _finished: bool) 
 		view.draw_polygon(beam_polygon(beam), PackedColorArray([near, near, far, far]), PackedVector2Array([Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]), _beam_texture)
 	# The sign stands in front of the ball and its rays.
 	view.draw_texture_rect(_logo_texture_cache, LOGO_RECT, false)
-	_draw_labels(view)
+	if press > 0.0:
+		_draw_pressed_tutorial(view, press)
+	_draw_labels(view, press)
 	_draw_mute(view, view._muted)
 
 
@@ -400,13 +404,29 @@ func _draw_ball(view, mirrors: Array[Dictionary], active: Array[Dictionary]) -> 
 		_fill(view, facet.polygon, color)
 
 
-func _draw_labels(view) -> void:
+# The pressed plate, as the mock's pressed button: the cap moves down by up
+# to 4 px over a lip that shrinks from 6 to 2 px, inside the unchanged plate.
+static func press_depth(press: float) -> float:
+	return 4.0 * clampf(press, 0.0, 1.0)
+
+
+func _draw_pressed_tutorial(view, press: float) -> void:
+	var dy := press_depth(press)
+	var lip := 6.0 - dy
+	var cap := TUTORIAL_RECT.grow(-2)
+	_fill(view, octagon(TUTORIAL_RECT, 6), INK)
+	_fill(view, octagon(Rect2(cap.position + Vector2(0, dy), cap.size - Vector2(0, dy)), 4), PINK_LO)
+	_fill(view, octagon(Rect2(cap.position + Vector2(0, dy), cap.size - Vector2(0, dy + lip)), 4), PINK)
+	_fill(view, rect_points(Rect2(TUTORIAL_RECT.position + Vector2(6, 2 + dy), Vector2(TUTORIAL_RECT.size.x - 12, 2))), PINK_HI)
+
+
+func _draw_labels(view, press := 0.0) -> void:
 	var label := "スタート"
 	view._draw_text(label, Vector2(CENTER_X - view._text_width(label, 30, true) * 0.5, 692.4), 30, MIST, true)
 	label = "準備中"
 	view._draw_text(label, Vector2(CENTER_X - view._text_width(label, 17) * 0.5, 717.0), 17, GOLD)
 	label = "チュートリアル"
-	view._draw_text(label, Vector2(CENTER_X - view._text_width(label, 30, true) * 0.5, 788.4), 30, INK, true)
+	view._draw_text(label, Vector2(CENTER_X - view._text_width(label, 30, true) * 0.5, 788.4 + press_depth(press)), 30, INK, true)
 
 
 # Speaker icon extents relative to its left edge: ON waves, OFF slash.

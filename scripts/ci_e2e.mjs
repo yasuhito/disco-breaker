@@ -84,9 +84,16 @@ try {
 
   await assertState("state.screen === 'title' && !state.campaign_available", "title opens with unavailable campaign");
   await captureState("title");
-  await clickCanvas(195, 775);
+  const titleFeedback = await page.evaluate(() => window.discoBreakerFeedback);
+  if (titleFeedback.title_presses !== 0 || titleFeedback.title_press_sound_starts !== 0) throw new Error(`no title audio before a press: ${JSON.stringify(titleFeedback)}`);
+  // Three rapid clicks on the tutorial plate: one press, one press sound,
+  // and nothing reaches the first lesson.
+  await clickCanvas(195, 775, 3);
   await page.waitForTimeout(300);
   await assertState("state.screen === 'tutorial' && state.stage_id === 'red_one_tap' && state.schema === 'disco-breaker-tutorial-state.v2'", "tutorial opens on stage 1");
+  await assertState("state.last_action.action === 'launch' && state.action_count === 1", "rapid title clicks never act on the first lesson");
+  const pressFeedback = await page.evaluate(() => window.discoBreakerFeedback);
+  if (pressFeedback.title_presses !== 1 || pressFeedback.title_press_sound_starts !== 1 || pressFeedback.title_pressing || pressFeedback.sound_starts !== 0) throw new Error(`one accepted title press plays its sound once: ${JSON.stringify(pressFeedback)}`);
   await assertState("!('dialogue_visible' in state) && state.utterance.kind === 'start' && !state.can_continue", "the board is editable at once with Continue disabled");
   await captureState("stage1-start");
   await bottom();
@@ -279,8 +286,11 @@ try {
   await touchPage.goto(baseUrl);
   await touchPage.waitForFunction(() => window.discoBreakerState);
   const touch = async (x, y) => { await touchPage.touchscreen.tap(x, y); await touchPage.waitForTimeout(100); };
+  await touchPage.touchscreen.tap(195, 775);
   await touch(195, 775);
   await touchPage.waitForTimeout(300);
+  const touchPress = await touchPage.evaluate(() => ({ state: window.discoBreakerState, feedback: window.discoBreakerFeedback }));
+  if (touchPress.state.screen !== "tutorial" || touchPress.state.action_count !== 1 || touchPress.feedback.title_presses !== 1 || touchPress.feedback.title_press_sound_starts !== 1) throw new Error(`a rapid double touch is one title press: ${JSON.stringify(touchPress)}`);
   const initialCount = await touchPage.evaluate(() => window.discoBreakerState.action_count);
   for (let value = 1; value <= 4; value += 1) {
     await touch(102, 304);

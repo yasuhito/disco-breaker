@@ -3,7 +3,8 @@ extends SceneTree
 # Title art regression: the angular grammar, a mirror ball built only from
 # mirrors, rays that leave visible facets outward in several directions and
 # heights, clean ray paths and endpoints, continuity through a revolution,
-# the audio control's padding and reduced-motion stillness.
+# the audio control's padding, reduced-motion stillness and the tutorial
+# plate's press.
 const Artwork := preload("res://src/title_artwork.gd")
 const FONT := preload("res://assets/fonts/NotoSansJP-Regular.otf")
 const BOLD_FONT := preload("res://assets/fonts/NotoSansJP-Bold.tres")
@@ -287,6 +288,30 @@ func _initialize() -> void:
 		if beam.strength >= 0.9:
 			still["up" if beam.heading.y < 0 else ("down" if beam.heading.y > 0 else "side")] = true
 	check(still.size() == 3, "the still frame shows up, sideways and down rays")
+	# The tutorial plate's press: at rest nothing changes; pushed in, only the
+	# plate's cap, highlight and label move down (4 px) inside the drawn plate.
+	var rest := Probe.new()
+	var pushed := Probe.new()
+	art.draw(rest, 0.0, true, false, false, 0.0)
+	art.draw(pushed, 0.0, true, false, false, 1.0)
+	check(str(rest.log) == str(first.log), "an unpressed tutorial plate draws exactly the title at rest")
+	var label_y := []
+	for probe in [rest, pushed]:
+		for text in probe.texts:
+			if text.text == "チュートリアル":
+				label_y.append(text.position.y)
+	check(label_y.size() == 2 and is_equal_approx(label_y[1] - label_y[0], 4.0), "the pushed label moves down 4 px")
+	var resting := {}
+	for shape in rest.shapes:
+		resting[str(shape)] = true
+	var added := 0
+	for shape in pushed.shapes:
+		if resting.has(str(shape)):
+			continue
+		added += 1
+		for point in shape:
+			check(Artwork.TUTORIAL_RECT.grow(0.001).has_point(point), "the pushed plate stays inside its drawn bounds")
+	check(added == 8, "the push redraws only the plate: outline, lip, cap and highlight, each a fill and its rim")
 	if failures == 0:
 		print("PASS: angular title, mirror-only ball, outward rays from facets at all heights and headings, clean paths across %d phases (at least %d bright rays)" % [frames, min_bright])
 	else:

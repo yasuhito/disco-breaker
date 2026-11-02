@@ -83,12 +83,15 @@ try {
   await page.screenshot({ path: `${out}/title-reflections-b.png` });
   assert.notDeepEqual(await page.screenshot({clip:{x:0,y:0,width:390,height:180}}), mirrorA, 'mirror ball and rays move');
   assert.deepEqual(await state(page), launch, 'animation cannot change gameplay');
+  assert.equal((await feedback(page)).title_press_sound_starts, 0, 'no title audio autoplays');
   // Entry and the lesson's bottom button overlap; a rapid second click cannot act.
   await tap(page,195,775,35);
   const entered = await state(page);
   await tap(page,195,760,35);
   assert.equal((await state(page)).action_count, entered.action_count);
   assert.equal((await state(page)).dialogue_visible, undefined, 'no dialogue gate');
+  assert.equal((await feedback(page)).title_presses, 1, 'a rapid second click is not a second press');
+  assert.equal((await feedback(page)).title_press_sound_starts, 1, 'the accepted press plays its sound once');
   await page.waitForTimeout(300);
   await page.screenshot({path:`${out}/tutorial-start-390x844.png`});
   await tap(page,102,304);
@@ -104,6 +107,7 @@ try {
   await tap(page,195,775,350);
   const resumed = await state(page);
   assert.deepEqual(resumed, playing, 'continue preserves entire semantic state');
+  assert.equal((await feedback(page)).title_press_sound_starts, 2, 'resuming presses the plate with its sound');
   // Cancel the edge wire, solve, and resume an existing success without a second sting.
   for(let i=0;i<3;i++) await tap(page,102,304);
   await tap(page,194,396);
@@ -148,7 +152,9 @@ try {
   assert.equal((await state(page)).screen,'title');
   await captureTitle(page, 'completed');
   await page.screenshot({path:`${out}/title-after-completion.png`});
+  const beforeReplay = (await feedback(page)).title_press_sound_starts;
   await tap(page,195,775,350); // replay
+  assert.equal((await feedback(page)).title_press_sound_starts, beforeReplay + 1, 'replay from the title presses with its sound');
   assert.equal((await state(page)).stage,1);
   assert.equal((await state(page)).last_action.action,'restart');
   assert.equal((await state(page)).utterance.kind,'start');
@@ -158,7 +164,10 @@ try {
   await tap(page,38,36,350);
   await tap(page,325,36);
   assert.equal((await feedback(page)).muted,true);
+  const mutedPresses = await feedback(page);
   await tap(page,195,775,350);
+  assert.equal((await feedback(page)).title_presses, mutedPresses.title_presses + 1, 'a muted press still opens the lesson');
+  assert.equal((await feedback(page)).title_press_sound_starts, mutedPresses.title_press_sound_starts, 'mute silences the press');
   await tap(page,194,396);
   assert.equal((await feedback(page)).sound_starts,solved.sound_starts+6); // prior safe lessons only, muted replay adds zero
   await page.reload();
@@ -173,7 +182,10 @@ try {
   assert.equal((await feedback(quiet)).reduced_motion,true);
   assert.equal((await feedback(quiet)).lamp_sound_starts,0);
   await captureAudioToggle(quiet, 'title');
+  assert.equal((await feedback(quiet)).title_press_sound_starts, 0, 'the audio plate is not the tutorial press');
   await tap(quiet,195,775,350);
+  assert.equal((await state(quiet)).screen, 'tutorial');
+  assert.equal((await feedback(quiet)).title_press_sound_starts, 1, 'reduced motion keeps the press sound');
   await captureAudioToggle(quiet, 'tutorial');
   await tap(quiet,102,304);
   await quiet.waitForTimeout(700);

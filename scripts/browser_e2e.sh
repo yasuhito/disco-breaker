@@ -96,10 +96,16 @@ cycle_grid_3x3() {
 # the bottom button (Continue / call the foreman / Replay) at 194,760; the
 # optional skip (and Back to title) at 194,668; home at 34,34.
 S="window.discoBreakerState"
+F="window.discoBreakerFeedback"
 assert_state "${S}.screen === 'title' && !${S}.campaign_available"
-click_canvas 195 775 title-enter-tutorial
+assert_state "${F}.title_presses === 0 && ${F}.title_press_sound_starts === 0"
+# Three rapid clicks on the tutorial plate: one press, one press sound, and
+# nothing reaches the first lesson.
+click_canvas 195 775 title-enter-tutorial 3
 sleep 0.3
 assert_state "${S}.screen === 'tutorial' && ${S}.stage_id === 'red_one_tap' && ${S}.schema === 'disco-breaker-tutorial-state.v2'"
+assert_state "${S}.last_action.action === 'launch' && ${S}.action_count === 1"
+assert_state "${F}.title_presses === 1 && ${F}.title_press_sound_starts === 1 && !${F}.title_pressing && ${F}.sound_starts === 0"
 assert_state "!('dialogue_visible' in ${S}) && ${S}.utterance.kind === 'start' && !${S}.can_continue"
 capture_state 01 stage1-start
 chrome-devtools-axi screenshot artifacts/tutorial-stage-1.png >/dev/null

@@ -49,6 +49,7 @@ func _init() -> void:
 	_test_unsafe_rewards_and_retry()
 	_test_reward_audio()
 	_test_lesson1_success_sound()
+	_test_title_press_sound()
 	_test_leak_events()
 	_test_residual_routes()
 	_test_original_fault_xor()
@@ -56,7 +57,7 @@ func _init() -> void:
 	_test_electrical_sounds()
 	_test_color_families_and_wire_directions()
 	if failures.is_empty():
-		print("PASS: 32 tutorial tests")
+		print("PASS: 33 tutorial tests")
 		quit(0)
 	else:
 		for failure in failures:
@@ -736,6 +737,20 @@ func _test_lesson1_success_sound() -> void:
 	rewards.observe(model.semantic_state())
 	model.tap_node(2, 1)
 	_expect(rewards.observe(model.semantic_state()) == "settled" and rewards.success_count == 0, "an unsafe dark lesson 1 has no success sound")
+
+
+# The title tutorial plate's press is the chosen audition sample A (「コトッ」),
+# imported uncompressed so the generated PCM is what plays.
+func _test_title_press_sound() -> void:
+	var raw := FileAccess.get_file_as_bytes("res://assets/sounds/title_tutorial_press.wav")
+	var hash := HashingContext.new()
+	hash.start(HashingContext.HASH_SHA256)
+	hash.update(raw)
+	_expect(hash.finish().hex_encode() == "4d294a4c23eaa16c8c0ce12b74f7f682d936771ca530ca19d4bdbd037661636e", "the bundled press is the chosen audition sample A_koto")
+	var stream: AudioStreamWAV = load("res://assets/sounds/title_tutorial_press.wav")
+	_expect(stream.format == AudioStreamWAV.FORMAT_16_BITS and stream.mix_rate == 48000 and not stream.stereo and stream.loop_mode == AudioStreamWAV.LOOP_DISABLED, "the press imports as 48 kHz 16-bit mono, not looped")
+	_expect(stream.data == raw.slice(44), "the imported press plays the generated PCM unchanged")
+	_expect(stream.get_length() > 0.08 and stream.get_length() < 0.1, "the press is the 90 ms sample")
 
 
 func _test_leak_events() -> void:
