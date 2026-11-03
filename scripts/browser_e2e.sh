@@ -172,7 +172,7 @@ click_canvas 194 304 stage4-leak-top-red
 assert_state "!${S}.can_call_foreman && document.getElementById('disco-breaker-live').textContent.endsWith('チェックして！ はまだ押せない')"
 click_canvas 194 396 stage4-leak-center-blue 3
 click_canvas 194 488 stage4-leak-bottom-red
-# The count lasts 1.6 s; check it in the same browser step as the call, as
+# The check lasts 1.0 s; assert it in the same browser step as the call, as
 # separate commands can take longer than that on a loaded host.
 chrome-devtools-axi eval "async () => { const c=document.querySelector('canvas'); const r=c.getBoundingClientRect(); const e={bubbles:true,clientX:r.left+194,clientY:r.top+760,button:0}; c.dispatchEvent(new MouseEvent('mousedown',e)); c.dispatchEvent(new MouseEvent('mouseup',e)); await new Promise(resolve => setTimeout(resolve,200)); const s=window.discoBreakerState; if (!(s.floor_dark && !s.inspection.safe && !s.can_continue && !s.can_call_foreman && s.counting && document.getElementById('disco-breaker-live').textContent.endsWith('チェックして！ はまだ押せない'))) throw new Error('the foreman must count before his unsafe verdict'); return true; }" >/dev/null
 record_action stage4-call-unsafe
@@ -187,7 +187,7 @@ chrome-devtools-axi eval "async () => { const c=document.querySelector('canvas')
 record_action stage4-call-foreman
 record_action stage4-continue-during-count
 sleep 1.6
-assert_state "!${S}.counting && ${S}.continue_enabled && ${S}.utterance.kind === 'safe'"
+assert_state "!${S}.counting && ${S}.continue_enabled && ${S}.utterance.kind === 'safe' && ${S}.utterance.text === 'よし、電気はもれてないね。\\nこれで安心！'"
 capture_state 14 stage4-inspection-passed
 chrome-devtools-axi screenshot artifacts/tutorial-inspection-dialogue.png >/dev/null
 click_canvas 194 760 stage4-continue

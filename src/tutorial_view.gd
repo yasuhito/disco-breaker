@@ -23,9 +23,9 @@ const PRIMARY_RECT := Rect2(16, 728, 356, 64)
 const SECONDARY_RECT := Rect2(74, 642, 240, 52)
 # Animations that have finished; resuming never replays them.
 const SETTLED := 10.0
-# Lesson 4's called inspection: the foreman traces the red line, then the
-# blue line (seconds), before his verdict is shown and Continue enabled.
-const COUNT_TIME := 1.6
+# Lesson 4's called inspection: the foreman says he is checking (seconds)
+# before his verdict is shown and Continue enabled.
+const COUNT_TIME := 1.0
 # An accepted title tutorial press: the plate goes down and back up over this
 # time (seconds), then the lesson opens. Reduced motion opens it at once.
 const PRESS_TIME := 0.15

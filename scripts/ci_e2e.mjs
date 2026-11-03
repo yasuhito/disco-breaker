@@ -174,7 +174,7 @@ try {
   if (!(called.inspection.safe && called.passed && called.counting && !called.continue_enabled) || raced.stage !== 4) throw new Error(`stage4 must count before its verdict and Continue must not race it: ${JSON.stringify(raced)}`);
   await page.screenshot({ path: `${artifactsDir}/stage4-counting.png` });
   await page.waitForFunction(() => !window.discoBreakerState.counting, null, { timeout: 5000 });
-  await assertState("state.continue_enabled && state.utterance.kind === 'safe'", "the verdict follows the count");
+  await assertState("state.continue_enabled && state.utterance.kind === 'safe' && state.utterance.text === 'よし、電気はもれてないね。\\nこれで安心！'", "the verdict follows the check with its approved line");
   await captureState("stage4-inspection-passed");
   await bottom();
 

@@ -81,10 +81,12 @@ func _build_stages() -> Array[Dictionary]:
 			"hidden": {4: BOTH}, "preset": {4: BOTH}, "target": -1,
 			# This lesson's own label for the call button (others say 「親方を呼ぶ」).
 			"call_label": "チェックして！",
+			# It does not teach counting yet: no inspection lines or count marks.
+			"teaches_counting": false,
 			"lines": {"open": "ちらつきは全部消えたね。\nでも、電気がもれてるかも。\n安全かどうかチェックしよう！", "lit": "光る床がある。\n暗くしてから呼んでね。",
-				"dark": "暗くなった。\n親方を呼ぼう。", "ok": "検査合格！\n漏電はないぞ。",
-				# Spoken while the foreman counts after being called (the view's presentation).
-				"call": "上の段と左の列を\n数えるぞ。"},
+				"dark": "暗くなった。\n親方を呼ぼう。", "ok": "よし、電気はもれてないね。\nこれで安心！",
+				# Spoken while the foreman checks after being called (the view's presentation).
+				"call": "電気がもれていないか、\nチェックするよ！"},
 		},
 		{
 			"id": "crossing_trap", "title": "見えない漏電", "size": 3, "inspect": "call",

@@ -83,8 +83,6 @@ const SPEAKER_SPAN := {false: Vector2(0, 34.2), true: Vector2(-8.5, 22.5)}
 const LEAK_ROUTE_AT := 0.7
 const LEAK_REVEAL_AT := 1.4
 const LEAK_DONE_AT := 2.0
-# Lesson 4's counting (the view's COUNT_TIME): red line, then blue line.
-const COUNT_LINE_TIME := 0.8
 # A wiring tap's floor outlines and wire glow (the view's CHANGE_TIME): full
 # for the first part, then one smooth fade; reduced motion holds it unfaded.
 const CHANGE_HOLD := 0.15
@@ -282,11 +280,10 @@ func _board(model, state: Dictionary, anim: Dictionary) -> void:
 	var residual := {1: Array(model._residual_support(1)), 2: Array(model._residual_support(2))}
 	var routes: Array = anim.routes if leak else []
 	var counting := float(anim.get("counting", -1.0))
-	if counting >= 0.0:
-		# The foreman traces the red line (top row), then the blue line (left column).
-		for component in [1, 2]:
-			_inspection_line(component, 1.0, clampf((counting - (component - 1) * COUNT_LINE_TIME) / COUNT_LINE_TIME, 0.0, 1.0))
-	elif (leak and age >= 0.0) or (inspected and state.inspection_mode == "call"):
+	# A lesson that does not teach counting shows no inspection lines and no
+	# count marks; its verdict and leak route are the same.
+	var teaches_counting := bool(d.get("teaches_counting", true))
+	if teaches_counting and counting < 0.0 and ((leak and age >= 0.0) or (inspected and state.inspection_mode == "call")):
 		# The foreman's inspection lines: red counts the top row, blue the left column.
 		for component in ([1, 2] if not leak else families):
 			_inspection_line(component, 1.0 if not residual[component].is_empty() else 0.6)
@@ -313,11 +310,12 @@ func _board(model, state: Dictionary, anim: Dictionary) -> void:
 			for wire in change.wires:
 				_wire_glow(socket_center(node) + Vector2(0, 1.0 if pressed else 0.0), int(wire.component), bool(wire.present), glow)
 	if leak and age >= 0.0:
-		_leftover_marks(families, residual)
+		_leftover_marks(families, residual, teaches_counting)
 		if age >= LEAK_ROUTE_AT:
 			for route in routes:
 				_route_dot(route, age, reduced)
-		_count_badges(d, families, residual, age >= LEAK_ROUTE_AT)
+		if teaches_counting:
+			_count_badges(d, families, residual, age >= LEAK_ROUTE_AT)
 	var since: float = anim.since_success
 	if happy and not reduced and since < 0.7:
 		_sparks(socket_center(target if target >= 0 else 4), since / 0.7)
@@ -502,18 +500,13 @@ func _sparks(center: Vector2, progress: float) -> void:
 		_diamond(center.x + u.x * k, center.y + u.y * k, r, GOLD_HI if (u.x + u.y) & 1 else WHITE)
 
 
-# A traced line grows from its start with a white marker at its head.
-func _inspection_line(component: int, alpha: float, traced := 1.0) -> void:
+# The foreman's dashed inspection line: red along the top row, blue down the
+# left column.
+func _inspection_line(component: int, alpha: float) -> void:
 	var c0 := socket_center(0)
 	var c8 := socket_center(8)
 	var line := PackedVector2Array([Vector2(c0.x - 27, c0.y), Vector2(c8.x + 27, c0.y)]) if component == 1 else PackedVector2Array([Vector2(c0.x, c0.y - 27), Vector2(c0.x, c8.y + 27)])
-	var length := _length(line)
-	if traced <= 0.0:
-		return
-	_stroke(_slice(line, 0.0, length * traced), Color(RED_HI if component == 1 else BLUE_HI, alpha), 1.2, [3.0, 2.0])
-	if traced < 1.0:
-		var head := _point_at(line, length * traced).round()
-		_plate(head.x - 3.5, head.y - 3.5, 7, 7, 2, WHITE)
+	_stroke(line, Color(RED_HI if component == 1 else BLUE_HI, alpha), 1.2, [3.0, 2.0])
 
 
 # Radial glass cracks from the centre of a floor the leak route crosses.
@@ -567,7 +560,7 @@ func _route_dot(route: Dictionary, age: float, reduced: bool) -> void:
 	_plate(head.x - 3.5, head.y - 3.5, 7, 7, 2, WHITE)
 
 
-func _leftover_marks(families: Array[int], residual: Dictionary) -> void:
+func _leftover_marks(families: Array[int], residual: Dictionary, on_lines := true) -> void:
 	var marked := {}
 	for component in families:
 		for node in residual[component]:
@@ -578,7 +571,7 @@ func _leftover_marks(families: Array[int], residual: Dictionary) -> void:
 				_stroke(ring, GOLD, 1.0, [2.0, 1.5])
 				marked[node] = true
 			# A gold diamond marks a leftover on that colour's inspection line.
-			if (component == 1 and node < 3) or (component == 2 and node % 3 == 0):
+			if on_lines and ((component == 1 and node < 3) or (component == 2 and node % 3 == 0)):
 				_diamond(center.x + 12, center.y - 13, 4, INK)
 				_diamond(center.x + 12, center.y - 13, 3, GOLD)
 

@@ -131,6 +131,36 @@ func _test_button_announcement(view) -> void:
 	_expect(seen.size() == 7, "every announcement form is covered")
 
 
+# Lesson 4 does not teach counting: its leak shows the route, cracks and
+# leftover rings but no inspection lines, count badges or line diamonds;
+# lesson 5 keeps all of them. The verdict is the same parity inspection.
+func _test_leak_without_counting() -> void:
+	var lesson4 := Tutorial.new()
+	lesson4.stage_index = 3
+	lesson4._reset_stage()
+	lesson4.tap_node(0, 1)
+	for tap in 3:
+		lesson4.tap_node(1, 1)
+	lesson4.tap_node(2, 1)
+	lesson4.inspect_floor()
+	_expect(bool(lesson4.semantic_state().floor_dark) and not bool(lesson4.inspection.safe) and bool(lesson4.inspection.red_crossing), "lesson 4's red 1-4-7 board is dark and leaking")
+	var lesson5 := Tutorial.new()
+	lesson5.stage_index = 4
+	lesson5._reset_stage()
+	lesson5.inspect_floor()
+	for case in [[lesson4, false], [lesson5, true]]:
+		var model: Tutorial = case[0]
+		var probe := _render(model, _anim(0.0, true, {"routes": _routes(model), "leak_age": 10.0}))
+		var lines := _strokes(probe, Color(Lesson.RED_HI, 1.0), 1.2 * Lesson.U)
+		var badges := _texts(probe).filter(func(text): return text.length() == 1 and text.is_valid_int())
+		var diamonds := _shapes(probe, Lesson.GOLD).filter(func(shape): return shape.size() == 4 and _bounds(shape).size.x <= 7.01 * Lesson.U and is_equal_approx(_bounds(shape).size.x, _bounds(shape).size.y))
+		var rings := _strokes(probe, Lesson.GOLD, 1.0 * Lesson.U)
+		var route := _strokes(probe, Color(Lesson.RED_HI, 1.0), 2.0 * Lesson.U) + _strokes(probe, Lesson.RED_HI, 2.0 * Lesson.U)
+		var name := "lesson %d" % (model.stage_index + 1)
+		_expect(lines.is_empty() != case[1] and badges.is_empty() != case[1] and diamonds.is_empty() != case[1], "%s: inspection lines, count badges and line diamonds %s" % [name, "shown" if case[1] else "hidden"])
+		_expect(not rings.is_empty() and not route.is_empty(), "%s: the leftover rings and the leak route stay" % name)
+
+
 # Lesson 4's bottom button reads 「チェックして！」 (disabled on a lit board too);
 # lessons 5 and 7 keep 「親方を呼ぶ」.
 func _test_call_labels() -> void:
@@ -730,18 +760,21 @@ func _test_counting(view) -> void:
 	view._publish_semantics()
 	var state: Dictionary = view.semantic_state()
 	_expect(state.passed and state.counting and not state.continue_enabled, "calling the foreman starts counting; the model verdict is already safe")
-	_expect(view._spoken(state) == "上の段と左の列を\n数えるぞ。" and view._talk_age == 0.0, "the foreman says he is counting")
+	_expect(view._spoken(state) == "電気がもれていないか、\nチェックするよ！" and view._talk_age == 0.0, "the foreman says he is checking")
 	_expect(view._sound_starts == sounds and view._success_age >= View.SETTLED, "the pass is not celebrated before the count")
 	var probe := _render(view.model, _anim(0.0, false, {"counting": 0.4, "state": view.model.semantic_state()}))
 	var drawn := _texts(probe)
-	_expect(drawn.has("数えるぞ。") and not drawn.has("漏電はないぞ。") and drawn.has("チェックして！") and not drawn.has("つづける"), "while counting only the counting line shows and Continue is not drawn")
+	_expect(drawn.has("チェックするよ！") and not drawn.has("これで安心！") and drawn.has("チェックして！") and not drawn.has("つづける"), "while checking only the checking line shows and Continue is not drawn")
+	_expect(_strokes(probe, Color(Lesson.RED_HI, 1.0), 1.2 * Lesson.U).is_empty() and _strokes(probe, Color(Lesson.BLUE_HI, 1.0), 1.2 * Lesson.U).is_empty(), "lesson 4 traces no inspection lines while checking")
 	view._handle_design_tap(View.PRIMARY_RECT.get_center())
 	_expect(view.model.stage_index == 3, "Continue cannot race the count")
-	view._process(0.9)
-	_expect(view.semantic_state().counting, "the blue line is still being traced")
-	view._process(0.8)
+	view._process(View.COUNT_TIME - 0.1)
+	_expect(view.semantic_state().counting, "the check is still running just before its end")
+	view._process(0.2)
 	state = view.semantic_state()
-	_expect(not state.counting and state.continue_enabled and view._spoken(state) == "検査合格！\n漏電はないぞ。", "after counting the verdict is spoken and Continue enabled")
+	_expect(not state.counting and state.continue_enabled and view._spoken(state) == "よし、電気はもれてないね。\nこれで安心！", "after the check the verdict is spoken and Continue enabled")
+	var passed_probe := _render(view.model, _anim(0.0, false, {"state": view.model.semantic_state()}))
+	_expect(_strokes(passed_probe, Color(Lesson.RED_HI, 1.0), 1.2 * Lesson.U).is_empty() and _strokes(passed_probe, Color(Lesson.BLUE_HI, 1.0), 1.2 * Lesson.U).is_empty() and _strokes(passed_probe, Color(Lesson.RED_HI, 0.6), 1.2 * Lesson.U).is_empty(), "lesson 4's pass shows no inspection lines")
 	_expect(view._sound_starts == sounds + 1 and view._success_age < 0.1 and view._enable_age < 0.1, "the pass is celebrated once, after the count")
 	view._process(2.0)
 	_expect(view._sound_starts == sounds + 1, "no second celebration")
@@ -780,7 +813,7 @@ func _test_counting(view) -> void:
 	view._handle_design_tap(View.PRIMARY_RECT.get_center())
 	view._publish_semantics()
 	_expect(view.semantic_state().counting and view._leak_age < 0.0 and view._leak_sound_starts == leaks, "the discharge waits for the count")
-	view._process(1.7)
+	view._process(View.COUNT_TIME + 0.1)
 	_expect(view._leak_sound_starts == leaks + 1 and view._leak_age >= 0.0 and view._leak_age < 0.2, "the leak presentation follows the count")
 	# Reduced motion skips straight to the final verdict; lesson 5 never counts.
 	view.reduced_motion = true
@@ -852,6 +885,7 @@ func _run() -> void:
 	_test_latest_utterance_only()
 	_test_inspection_presentation()
 	_test_call_labels()
+	_test_leak_without_counting()
 	_test_legend_alignment()
 	_test_socket_wire_crossing()
 	_test_foreman_alignment()
