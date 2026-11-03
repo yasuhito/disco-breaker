@@ -434,6 +434,177 @@ func _tap(view, point: Vector2, touch := true) -> void:
 
 # Lesson 4: the foreman counts the red line, then the blue line, before
 # his verdict; Continue is inert meanwhile; edits and home cancel it.
+# A tap that turns lit floors dark marks exactly those floors (from the model's
+# lit checks before and after) and the wire that changed, briefly, for that
+# action only; the model, its verdict and the sounds are unchanged.
+func _strokes(probe: Probe, color: Color, width: float) -> Array[PackedVector2Array]:
+	var result: Array[PackedVector2Array] = []
+	for entry in probe.log:
+		if entry[0] == "polyline" and entry[2] == color and is_equal_approx(entry[3], width):
+			result.append(entry[1])
+	return result
+
+
+# An outline (design px, or units with scaled = false) lies inside its floor
+# and clear of every socket's octagon (half size 13, |dx| + |dy| <= 18) by its
+# 1.5-unit stroke's half width plus one unit, sampled along every edge.
+func _outline_fits(points: PackedVector2Array, face: Dictionary, scaled := true) -> bool:
+	var rect := Lesson.face_rect(face)
+	for i in points.size() - 1:
+		var a := points[i] / Lesson.U if scaled else points[i]
+		var b := points[i + 1] / Lesson.U if scaled else points[i + 1]
+		var steps := maxi(1, int(a.distance_to(b) / 0.5))
+		for step in steps + 1:
+			var p := a.lerp(b, float(step) / steps)
+			if not rect.has_point(p):
+				return false
+			for node in 9:
+				var d := (p - Lesson.socket_center(node)).abs()
+				if d.x <= 14.75 and d.y <= 14.75 and d.x + d.y <= 18.0 + 0.75 * sqrt(2.0) + 1.0:
+					return false
+	return true
+
+
+func _test_darkening(view) -> void:
+	view.reduced_motion = false
+	view._muted = true
+	var reset := func(stage: int, phase := 0) -> void:
+		view.model.stage_index = stage
+		view.model.boundary_phase = phase
+		view.model._reset_stage()
+		view.model._record("next_stage", {})
+		view._navigation_guard_until = 0
+		view._publish_semantics()
+	var tap := func(node: int) -> void:
+		view._handle_design_tap(Lesson.socket_center(node) * 2.0)
+		view._publish_semantics()
+	var floors := func() -> Array:
+		var result := []
+		for floor in view._darkened:
+			result.append([int(floor.component), int(floor.check)])
+		return result
+	var wires := func() -> Array:
+		var result := []
+		for wire in view._darkening_wires:
+			result.append([int(wire.component), bool(wire.present)])
+		return result
+	# Red: lesson 1's centre darkens both red floors; its red wire glows.
+	reset.call(0)
+	var schema: Array = view.semantic_state().keys()
+	var sounds: int = view._sound_starts
+	tap.call(4)
+	_expect(floors.call() == [[1, 0], [1, 1]] and wires.call() == [[1, true]] and view._darkening(), "red: exactly the two red floors that went dark, and the red wire")
+	_expect(view.model.passed() and view.semantic_state().keys() == schema, "the verdict is immediate and the semantic state unchanged")
+	var anim := _anim(0.0, false, {"darkening": {"node": view._darkening_node, "floors": view._darkened, "wires": view._darkening_wires, "age": 0.0}})
+	var probe := _render(view.model, anim)
+	var faces: Array = view.model.definition().red_faces
+	var outlines := _strokes(probe, Lesson.GOLD, 1.5 * Lesson.U)
+	_expect(outlines.size() == 2, "red: one gold outline per darkened floor")
+	for i in mini(outlines.size(), 2):
+		_expect(_outline_fits(outlines[i], faces[i]), "red: floor %d's outline lies inside it and clear of its sockets" % i)
+	var cores := _shapes(probe, Lesson.WHITE).filter(func(shape): return shape.size() == 4 and _bounds(shape).size.y > 20.0)
+	_expect(cores.size() == 1 and _near(_mean(cores[0]), Lesson.socket_center(4) * Lesson.U) and cores[0][2].x > cores[0][0].x, "red: the glowing core runs along the red diagonal of the tapped socket")
+	for age in [[0.1, 1.0], [0.3, 0.5]]:
+		var faded := _render(view.model, _anim(0.0, false, {"darkening": {"node": 4, "floors": view._darkened, "wires": view._darkening_wires, "age": age[0]}}))
+		_expect(_strokes(faded, Color(Lesson.GOLD, age[1]), 1.5 * Lesson.U).size() == 2, "the outline holds, then fades smoothly (age %.2f)" % age[0])
+	_expect(_strokes(_render(view.model, _anim(0.0, true, {"darkening": {"node": 4, "floors": view._darkened, "wires": view._darkening_wires, "age": 0.3}})), Lesson.GOLD, 1.5 * Lesson.U).size() == 2, "reduced motion holds the outline without fading")
+	_expect(_strokes(_render(view.model, _anim()), Lesson.GOLD, 1.5 * Lesson.U).is_empty(), "no outline without a darkening tap")
+	view._process(View.DARKEN_TIME)
+	_expect(not view._darkening(), "the presentation ends after its time")
+	# Blue: lesson 2's second tap removes red and adds blue; all four floors go dark.
+	reset.call(1)
+	tap.call(4)
+	_expect(floors.call().is_empty() and not view._darkening(), "lighting floors alone shows nothing")
+	tap.call(4)
+	_expect(floors.call() == [[1, 0], [1, 1], [2, 0], [2, 1]] and wires.call() == [[1, false], [2, true]], "blue: the red trace leaves and the blue wire glows, with the four floors they darkened")
+	# Both: lesson 3's third tap adds red to blue; only the red floors went dark.
+	reset.call(2)
+	tap.call(4)
+	tap.call(4)
+	_expect(floors.call() == [[2, 0], [2, 1]] and wires.call() == [[2, true]], "red to blue: the red floors light again, so only the blue wire and the blue floors are marked")
+	tap.call(4)
+	_expect(floors.call() == [[1, 0], [1, 1]] and wires.call() == [[1, true]], "both: only the floors this tap darkened, and only the wire that changed")
+	# Lesson 6's two parts: each repair darkens exactly its one floor.
+	reset.call(5, 0)
+	tap.call(0)
+	_expect(floors.call().size() == 1 and int(view._darkened[0].component) == 1 and wires.call() == [[1, true]] and view.model.passed(), "lesson 6 red: the single floor and the red wire")
+	reset.call(5, 1)
+	tap.call(2)
+	_expect(floors.call().is_empty(), "lesson 6 blue: the first tap (red) darkens nothing")
+	tap.call(2)
+	_expect(floors.call() == [[1, 2], [2, 0]] and wires.call() == [[1, false], [2, true]] and view.model.passed(), "lesson 6 blue: the red edge floor the first tap lit and the blue floor go dark, with the red trace and the blue wire")
+	_expect(view.model.definition().red_faces[2].nodes.size() == 2, "that red floor is a half (edge) floor")
+	# A full floor's outline fits it and clears its sockets; a half (edge)
+	# floor's is its glass rectangle 3 units in, corners cut by 2.
+	var halves := 0
+	for phase in 2:
+		reset.call(5, phase)
+		for family in [view.model.definition().red_faces, view.model.definition().blue_faces]:
+			for face in family:
+				var outline := Lesson.darkened_outline(face)
+				if face.nodes.size() == 4:
+					_expect(_outline_fits(outline, face, false), "outline of floor %s fits and clears its sockets" % [face.nodes])
+				else:
+					halves += 1
+					_expect(_bounds(outline).is_equal_approx(Lesson.face_rect(face).grow(-3)) and outline.size() == 9 and outline[0].distance_to(_bounds(outline).position) < 2.01, "outline of half floor %s is its inset rectangle" % [face.nodes])
+	_expect(halves >= 4, "half floors are among the outlines checked")
+	# Every single tap from every lesson start: marked floors are exactly the
+	# lit-to-dark ones; dark-to-lit and unchanged floors are never marked.
+	var mixed := false
+	var quiet := false
+	for stage in 7:
+		for node in 9:
+			reset.call(stage)
+			var before := [view.model.lit_red_checks(), view.model.lit_blue_checks()]
+			tap.call(node)
+			var after := [view.model.lit_red_checks(), view.model.lit_blue_checks()]
+			var expected := []
+			var lit := false
+			for component in [1, 2]:
+				for check in before[component - 1]:
+					if not after[component - 1].has(check):
+						expected.append([component, check])
+				for check in after[component - 1]:
+					lit = lit or not before[component - 1].has(check)
+			_expect(floors.call() == expected and view._darkening() == not expected.is_empty(), "stage %d node %d: only genuine lit-to-dark floors are marked" % [stage, node])
+			mixed = mixed or (lit and not expected.is_empty())
+			quiet = quiet or expected.is_empty()
+	_expect(mixed and quiet, "the sweep covers taps that darken and light at once, and taps that darken nothing")
+	# A dark but unsafe board still marks its floors, and the leak is told as before.
+	reset.call(0)
+	tap.call(1)
+	tap.call(7)
+	_expect(not floors.call().is_empty() and not view.model.passed() and view._leaks.active, "dark but leaking: the darkened floors are marked and the leak still shows")
+	# Lifecycle: a later action, Continue, home and replay end it.
+	reset.call(0)
+	tap.call(4)
+	tap.call(0)
+	_expect(not view._darkening() or floors.call() != [[1, 0], [1, 1]], "the next tap replaces a stale presentation")
+	reset.call(0)
+	tap.call(4)
+	view._handle_design_tap(View.PRIMARY_RECT.get_center())
+	view._publish_semantics()
+	_expect(view.model.stage_index == 1 and not view._darkening(), "Continue does not carry it into the next lesson")
+	reset.call(0)
+	tap.call(4)
+	view._show_title()
+	view._open_tutorial()
+	_expect(not view._darkening(), "home and resume clear it")
+	reset.call(0)
+	tap.call(4)
+	view.model.restart()
+	_expect(not view._darkening(), "replay clears it")
+	# Reduced motion: still shown (static), then gone after its time.
+	view.reduced_motion = true
+	reset.call(0)
+	tap.call(4)
+	_expect(view._darkening(), "reduced motion shows the static outline")
+	view._process(View.DARKEN_TIME)
+	_expect(not view._darkening(), "reduced motion removes it after its time, without a fade")
+	view.reduced_motion = false
+	_expect(view._sound_starts == sounds, "muted: no sound was added by the presentation")
+
+
 func _test_counting(view) -> void:
 	var stage4 := func() -> void:
 		view.model.stage_index = 3
@@ -637,6 +808,7 @@ func _run() -> void:
 	view._handle_design_tap(View.PRIMARY_RECT.get_center())
 	view._publish_semantics()
 	_expect(not view.model.passed() and view._leaks.active, "calling again on the same leaking board does nothing")
+	_test_darkening(view)
 	_test_counting(view)
 	_test_lesson1_bell(view)
 	# The audio server drops stopped playbacks (and their streams) on its own

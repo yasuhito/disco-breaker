@@ -85,6 +85,10 @@ const LEAK_REVEAL_AT := 1.4
 const LEAK_DONE_AT := 2.0
 # Lesson 4's counting (the view's COUNT_TIME): red line, then blue line.
 const COUNT_LINE_TIME := 0.8
+# A darkening tap's outline and wire glow (the view's DARKEN_TIME): full for
+# the first part, then one smooth fade; reduced motion holds it unfaded.
+const DARKEN_HOLD := 0.15
+const DARKEN_FADE := 0.3
 
 var view
 var _aa := 0.25
@@ -246,6 +250,14 @@ func _board(model, state: Dictionary, anim: Dictionary) -> void:
 				var brightness := Flicker.brightness(key, now, reduced)
 				level = "lit" if brightness >= 0.6 else ("dim" if brightness >= 0.2 else "drop")
 			_floor(face_rect(floor.face), floor.component, level)
+	var darkening: Dictionary = anim.get("darkening", {})
+	var glow := 0.0
+	if not darkening.is_empty():
+		glow = 1.0 if reduced else clampf(1.0 - (float(darkening.age) - DARKEN_HOLD) / DARKEN_FADE, 0.0, 1.0)
+		for floor in darkening.floors:
+			var faces: Array = d.red_faces if int(floor.component) == 1 else d.blue_faces
+			_stroke(darkened_outline(faces[int(floor.check)]), Color(GOLD_HI, 0.35 * glow), 3.5)
+			_stroke(darkened_outline(faces[int(floor.check)]), Color(GOLD, glow), 1.5)
 	var inspection: Dictionary = state.inspection
 	var inspected: bool = state.inspected
 	var leak: bool = inspected and not bool(inspection.safe)
@@ -286,6 +298,9 @@ func _board(model, state: Dictionary, anim: Dictionary) -> void:
 		var hidden := int(d.hidden.get(node, 0)) if reveal else 0
 		var pressed: bool = not reduced and node == int(anim.pressed_node) and float(anim.since_press) < 0.11
 		_socket(socket_center(node), int(state.corrections[node]), pressed, happy and node == target, hidden)
+		if glow > 0.0 and node == int(darkening.node):
+			for wire in darkening.wires:
+				_wire_glow(socket_center(node) + Vector2(0, 1.0 if pressed else 0.0), int(wire.component), bool(wire.present), glow)
 	if leak and age >= 0.0:
 		_leftover_marks(families, residual)
 		if age >= LEAK_ROUTE_AT:
@@ -416,6 +431,45 @@ func _wire(center: Vector2, component: int, dashed: bool) -> void:
 	if not dashed:
 		for tip in [Vector2(x0, y0), Vector2(x0 + (n - 1) * dx, y0 + n - 1)]:
 			_plate(tip.x - 2, tip.y - 2, 5, 5, 1, f.hi)
+
+
+# The closed outline (units) of a floor this tap turned dark, 3 units inside
+# its edge. A full floor's corners are cut at 45 degrees clear of its four
+# sockets, so the whole outline shows over the dark glass. A half (edge) floor
+# is too narrow for that: like its glass, its socket-side corners pass under
+# the sockets and its long outer side shows.
+static func darkened_outline(face: Dictionary) -> PackedVector2Array:
+	var rect := face_rect(face).grow(-3)
+	var cut := 15.0 if face.nodes.size() == 4 else 2.0
+	var loop := _oct_points(rect.position.x, rect.position.y, rect.size.x, rect.size.y, cut)
+	loop.append(loop[0])
+	return loop
+
+
+# The changed wire lights up on its own diagonal: a present wire glows in its
+# colour with a white core; a removed one leaves a fading coloured trace.
+func _wire_glow(center: Vector2, component: int, present: bool, alpha: float) -> void:
+	var f: Dictionary = FAMILY[component]
+	var band := wire_band(center, component)
+	var dx := 1.0 if component == 1 else -1.0
+	var bx: float = band[0].x - 0.5 * dx
+	var y0: float = band[0].y
+	if present:
+		_glow_band(bx - 3, y0, dx, Color(f.hi, 0.35 * alpha), 7)
+		_glow_band(bx - 1, y0, dx, Color(f.hi, alpha), 3)
+		_glow_band(bx, y0, dx, Color(WHITE, alpha), 1)
+	else:
+		_glow_band(bx - 1, y0, dx, Color(f.base, 0.6 * alpha), 3)
+
+
+# A fading diagonal band keeps its antialiased rim (translucent _fill shapes
+# skip it), so it stays smooth, not stepped, while it fades.
+func _glow_band(x: float, y: float, dx: float, color: Color, t: float) -> void:
+	var points := Transform2D.IDENTITY.scaled(Vector2(U, U)) * _diag_points(x, y, 14, int(dx), t)
+	view.draw_colored_polygon(points, color)
+	var loop := points.duplicate()
+	loop.append(points[0])
+	view.draw_polyline(loop, color, _aa, true)
 
 
 func _zero_mark(x: float, y: float) -> void:

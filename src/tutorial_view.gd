@@ -29,6 +29,9 @@ const COUNT_TIME := 1.6
 # An accepted title tutorial press: the plate goes down and back up over this
 # time (seconds), then the lesson opens. Reduced motion opens it at once.
 const PRESS_TIME := 0.15
+# A tap that turns lit floors dark shows why: the socket's changed wire glows
+# and exactly those floors get a gold outline that fades out (seconds).
+const DARKEN_TIME := 0.45
 
 var model := Tutorial.new()
 var at_title := true
@@ -77,6 +80,13 @@ var _lamp_sound_starts := 0
 var _lamp_last_key := -1
 var _lamp_last_time := -1.0
 var _audio_unlocked := false
+# The last tap's lit-to-dark floors ({component, check}) and the wires whose
+# change caused them ({component, present}); valid only for that action.
+var _darkened: Array[Dictionary] = []
+var _darkening_wires: Array[Dictionary] = []
+var _darkening_node := -1
+var _darkening_age := SETTLED
+var _darkening_sequence := -1
 # The title press has its own player, so nothing that stops lesson audio on
 # entry can cut it; only mute does.
 var _press_audio := AudioStreamPlayer.new()
@@ -131,6 +141,12 @@ func _process(delta: float) -> void:
 		queue_redraw()
 	if counting and not _counting():
 		_finish_counting()
+	# Runs in reduced motion too, where the outline is static and then gone.
+	if _darkening_age < DARKEN_TIME:
+		_darkening_age += delta
+		queue_redraw()
+		if _darkening_age >= DARKEN_TIME:
+			_publish_feedback()
 	if _press_age >= 0.0:
 		_press_age += delta
 		queue_redraw()
@@ -202,7 +218,7 @@ func inject_action(action: Dictionary) -> bool:
 	var accepted := false
 	match String(action.get("type", "")):
 		"tap":
-			accepted = model.tap_node(int(action.get("row", -1)), int(action.get("column", -1)))
+			accepted = _tap(int(action.get("row", -1)), int(action.get("column", -1)))
 		"inspect":
 			accepted = not model.inspect_floor().is_empty()
 		"next":
@@ -265,10 +281,41 @@ func _handle_design_tap(point: Vector2) -> void:
 		queue_redraw()
 		return
 	var node := Lesson.node_at(point)
-	if node >= 0 and model.tap_node(int(node / 3.0), node % 3):
+	if node >= 0 and _tap(int(node / 3.0), node % 3):
 		_tap_node_index = node
 		_tap_age = 0.0
 		queue_redraw()
+
+
+# A wiring tap, remembering which lit floors it turned dark (from the model's
+# lit checks just before and after) and which of the socket's wires changed.
+func _tap(row: int, column: int) -> bool:
+	var size := int(model.definition().size)
+	var node := row * size + column
+	var before := {Tutorial.RED: model.lit_red_checks(), Tutorial.BLUE: model.lit_blue_checks()}
+	var code := int(model.corrections[node]) if row >= 0 and row < size and column >= 0 and column < size else 0
+	if not model.tap_node(row, column):
+		return false
+	var changed := code ^ int(model.corrections[node])
+	_darkened.clear()
+	_darkening_wires.clear()
+	for component in [Tutorial.RED, Tutorial.BLUE]:
+		var after := model.lit_red_checks() if component == Tutorial.RED else model.lit_blue_checks()
+		var count := _darkened.size()
+		for check in before[component]:
+			if not after.has(check):
+				_darkened.append({"component": component, "check": check})
+		if _darkened.size() > count and changed & component:
+			_darkening_wires.append({"component": component, "present": bool(model.corrections[node] & component)})
+	_darkening_node = node
+	_darkening_sequence = model.trace.size()
+	_darkening_age = 0.0 if not _darkened.is_empty() else SETTLED
+	return true
+
+
+# The darkening presentation belongs to the action that caused it.
+func _darkening() -> bool:
+	return not at_title and _darkening_age < DARKEN_TIME and model.trace.size() == _darkening_sequence
 
 
 func _replay() -> void:
@@ -328,6 +375,7 @@ func _settle_animations() -> void:
 	_progress_age = SETTLED
 	_leak_age = SETTLED
 	_count_age = SETTLED
+	_darkening_age = SETTLED
 	_pending_reward = ""
 	_pending_leak_sound = false
 
@@ -363,6 +411,7 @@ func _draw() -> void:
 		"since_enable": _enable_age, "since_press": _tap_age, "pressed_node": _tap_node_index,
 		"leak_age": _leak_age, "routes": _leak_routes,
 		"counting": _count_age if _counting() else -1.0,
+		"darkening": {"node": _darkening_node, "floors": _darkened, "wires": _darkening_wires, "age": _darkening_age} if _darkening() else {},
 	})
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
@@ -493,6 +542,7 @@ func _publish_feedback() -> void:
 		var feedback := {"kind": _rewards.kind, "event_count": _rewards.event_count,
 			"success_count": _rewards.success_count, "sound_starts": _sound_starts, "last_reward_sound": _last_reward_sound,
 			"title_presses": _title_presses, "title_press_sound_starts": _press_sound_starts, "title_pressing": _press_age >= 0.0,
+			"wiring": {"active": _darkening(), "node": _darkening_node, "floors": _darkened, "wires": _darkening_wires, "sequence": _darkening_sequence},
 			"muted": _muted, "reduced_motion": reduced_motion,
 			"leak_active": _leaks.active and not at_title, "leak_events": _leaks.event_count,
 			"leak_sound_starts": _leak_sound_starts, "lamp_sound_starts": _lamp_sound_starts,

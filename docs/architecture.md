@@ -44,6 +44,8 @@ The lesson screen is a direct port of the proposal's playable mock (`source/art.
 
 Every plate is exactly its hit area: each connection box reacts in its whole 92 × 92 px cell, the bottom button in its 356 × 64 px plate, home in 44 × 44 and audio in 80 × 44. A disabled button does nothing.
 
+A wiring tap that turns lit floors dark shows the cause briefly: the view compares the model's lit checks just before and after that tap, and only floors that went from lit to dark get a gold outline on their glass edge, while the socket's changed wire glows on its own diagonal (a removed wire leaves a fading coloured trace). It holds for 0.15 seconds and fades over 0.3; reduced motion shows it unfaded for the same 0.45 seconds and then removes it. It belongs to that one action: any later tap, inspection, Continue, replay or home ends it. It is presentation only; the verdict, sounds and semantic state are immediate and unchanged, and `window.discoBreakerFeedback.wiring` reports the last tap's darkened floors and wires for tests.
+
 The view handles native touch and mouse input directly. Mouse emulation from touch is disabled so one physical tap advances exactly one wire state. CI includes a native-touch cycle regression alongside the seven-stage mouse-driven flow. `scripts/check.sh` also parses the view explicitly, because an editor import alone may report a script error without returning a failing process status.
 
 

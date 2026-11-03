@@ -117,6 +117,8 @@ try {
   await assertState("state.passed && state.can_continue && state.inspection.safe", "stage1 solve is logically safe");
   const firstReward = await page.evaluate(() => window.discoBreakerFeedback);
   if (firstReward.success_count !== 1 || firstReward.sound_starts !== 1 || firstReward.last_reward_sound !== "lesson1_bell") throw new Error(`stage1 must ring its bell once: ${JSON.stringify(firstReward)}`);
+  // The solving tap marks exactly the two red floors it turned dark and its red wire.
+  if (firstReward.wiring.floors.map((f) => `${f.component}:${f.check}`).join() !== "1:0,1:1" || firstReward.wiring.wires.map((w) => `${w.component}:${w.present}`).join() !== "1:true" || firstReward.wiring.node !== 4) throw new Error(`stage1 solve must mark its darkened floors: ${JSON.stringify(firstReward.wiring)}`);
   await assertState("state.utterance.text === 'いいぞ！\\n赤い床のちらつきが\\n直ったね！'", "stage1 praise is the approved line");
   await captureState("stage1-pass");
   await bottom();
