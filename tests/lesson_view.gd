@@ -68,9 +68,9 @@ func _near(a: Vector2, b: Vector2) -> bool:
 	return a.distance_to(b) < 0.001
 
 
-# The legend's four sockets: dots symmetric about the centre, red and blue
-# bands of one size crossing exactly at the centre, chevrons of two equal
-# joined arms centred between sockets.
+# The legend's four sockets: red and blue bands of one size crossing exactly
+# at the centre, a faint grey guide on the same centre line for each missing
+# colour (no dots), chevrons of two equal joined arms centred between sockets.
 func _test_legend_alignment() -> void:
 	var probe := Probe.new()
 	var art := Lesson.new()
@@ -79,18 +79,34 @@ func _test_legend_alignment() -> void:
 	var grooves := _shapes(probe, Lesson.GROUT)
 	var reds := _shapes(probe, Lesson.RED)
 	var blues := _shapes(probe, Lesson.BLUE)
-	var dots := _shapes(probe, Lesson.NIGHT5)
+	var guides := _shapes(probe, Lesson.GUIDE)
 	var arms := _shapes(probe, Lesson.MIST)
-	_expect(grooves.size() == 4 and reds.size() == 2 and blues.size() == 2 and dots.size() == 2 and arms.size() == 6, "the legend draws four sockets, two red, two blue, two dots and three chevrons")
-	if grooves.size() != 4 or reds.size() != 2 or blues.size() != 2 or dots.size() != 2 or arms.size() != 6:
+	_expect(grooves.size() == 4 and reds.size() == 2 and blues.size() == 2 and guides.size() == 4 and arms.size() == 6, "the legend draws four sockets, two red, two blue, four grey guides and three chevrons")
+	if grooves.size() != 4 or reds.size() != 2 or blues.size() != 2 or guides.size() != 4 or arms.size() != 6:
 		return
 	var centres: Array[Vector2] = []
 	for groove in grooves:
 		centres.append(_bounds(groove).get_center())
 		_expect(is_equal_approx(centres[-1].y, (Lesson.LEGEND_Y + 0.5) * Lesson.U), "each legend socket is centred on the legend line")
-	var left := _bounds(dots[0]).get_center()
-	var right := _bounds(dots[1]).get_center()
-	_expect(_near((left + right) * 0.5, centres[0]) and is_equal_approx(left.y, right.y), "the empty socket's two dots are symmetric about its centre")
+	# Guides in drawing order: empty red, empty blue, blue on the red socket, red on the blue socket.
+	for guide in [[guides[0], 0, reds[0], true], [guides[1], 0, blues[0], false], [guides[2], 1, blues[0], false], [guides[3], 2, reds[0], true]]:
+		var points: PackedVector2Array = guide[0]
+		var wire := _bounds(guide[2])
+		_expect(_near(_mean(points), centres[guide[1]]), "each legend guide is centred on its socket")
+		_expect(is_equal_approx(_bounds(points).position.y, wire.position.y) and is_equal_approx(_bounds(points).end.y, wire.end.y) and (points[2].x > points[0].x) == guide[3], "each legend guide runs along its colour's band, end to end")
+		_expect(_bounds(points).size.x < wire.size.x, "a guide is thinner than its wire")
+	# Each coloured band lies over the grey guide it crosses.
+	var order := {}
+	for index in probe.log.size():
+		var entry: Array = probe.log[index]
+		if entry[0] == "polygon" and entry[2] in [Lesson.GUIDE, Lesson.RED, Lesson.BLUE]:
+			var icon := 0
+			for c in 4:
+				if _mean(entry[1]).distance_to(centres[c]) < _mean(entry[1]).distance_to(centres[icon]):
+					icon = c
+			order[icon] = order.get(icon, []) + [entry[2] == Lesson.GUIDE]
+	for icon in [1, 2]:
+		_expect(order.get(icon, []) == [true, false], "legend socket %d draws its guide under its coloured band" % icon)
 	for band in [[reds[0], 1], [blues[0], 2], [reds[1], 3], [blues[1], 3]]:
 		_expect(_near(_mean(band[0]), centres[band[1]]), "each legend wire band is centred on its socket (both cross at the centre)")
 	_expect(_bounds(reds[1]).size.is_equal_approx(_bounds(blues[1]).size), "red and blue legend bands are the same size")
@@ -102,7 +118,9 @@ func _test_legend_alignment() -> void:
 		_expect(_near(_union([upper, lower]).get_center(), (centres[gap] + centres[gap + 1]) * 0.5), "each chevron is centred between its sockets")
 
 
-# On the board, a socket's red and blue bands cross at its centre too.
+# On the board, a socket's red and blue bands cross at its centre too, and
+# each family it lacks is a faint grey guide on the same band (no dots), also
+# under a dashed original fault and on a pressed socket.
 func _test_socket_wire_crossing() -> void:
 	var probe := Probe.new()
 	var art := Lesson.new()
@@ -112,6 +130,33 @@ func _test_socket_wire_crossing() -> void:
 	for color in [Lesson.RED, Lesson.BLUE, Lesson.RED_HI, Lesson.BLUE_HI]:
 		var bands := _shapes(probe, color).filter(func(shape): return _bounds(shape).size.y > 20.0)
 		_expect(bands.size() == 1 and _near(_mean(bands[0]), center * Lesson.U), "a socket's wire bands cross at its centre")
+	var lines := {}
+	for color in [Lesson.RED_HI, Lesson.BLUE_HI]:
+		lines[color] = _shapes(probe, color).filter(func(shape): return _bounds(shape).size.y > 20.0)[0]
+	for case in [[0, 0, false], [1, 0, false], [2, 0, false], [3, 0, false], [0, 3, false], [2, 1, false], [0, 0, true]]:
+		var socket := Probe.new()
+		art.view = socket
+		art._socket(center, case[0], case[2], false, case[1])
+		var cap := (center + Vector2(0, 1.0 if case[2] else 0.0)) * Lesson.U
+		var guides := _shapes(socket, Lesson.GUIDE).filter(func(shape): return shape.size() == 4 and _bounds(shape).size.y > 20.0)
+		var wanted: Array = [1, 2].filter(func(component): return not case[0] & component)
+		_expect(guides.size() == wanted.size(), "socket %s: one grey guide per unwired colour" % [case])
+		for i in mini(guides.size(), wanted.size()):
+			var line: PackedVector2Array = lines[Lesson.RED_HI if wanted[i] == 1 else Lesson.BLUE_HI]
+			_expect(_near(_mean(guides[i]), cap) and _bounds(guides[i]).size.is_equal_approx(_bounds(line).size) and (guides[i][2].x > guides[i][0].x) == (wanted[i] == 1), "socket %s: each guide follows its colour's centre line, end to end" % [case])
+		var first_guide := -1
+		var first_wire := -1
+		for index in socket.log.size():
+			var entry: Array = socket.log[index]
+			if entry[0] != "polygon" or entry[1].size() != 4 or _bounds(entry[1]).size.y < 20.0:
+				continue
+			if entry[2] == Lesson.GUIDE and first_guide < 0:
+				first_guide = index
+			elif entry[2] != Lesson.GUIDE and first_wire < 0:
+				first_wire = index
+		_expect(first_guide < 0 or first_wire < 0 or first_guide < first_wire, "socket %s: guides lie under wires and dashed faults" % [case])
+		var small := _shapes(socket, Lesson.GUIDE).filter(func(shape): return _bounds(shape).size.x < 6.0 and _bounds(shape).size.y < 6.0)
+		_expect(small.is_empty(), "socket %s: no dots" % [case])
 
 
 # The foreman's face and shirt are symmetric about the head's centre in every

@@ -47,6 +47,8 @@ const WHITE := Color("#ffffff")
 const HAIR := Color("#3a2214")
 const CHEEK := Color("#e0866a")
 const SHIRT := Color("#2c4f8a")
+# Faint guide for a wire a socket does not have yet (well below red and blue).
+const GUIDE := NIGHT5
 
 # Red wiring is always "\", blue always "/", as are their lit floors' stripes.
 const FAMILY := {
@@ -370,9 +372,11 @@ func _socket(center: Vector2, code: int, pressed: bool, success: bool, hidden: i
 		_cham(x + 1, y + 1, s - 2, s - 2, k - 1, NIGHT4)
 	_cham(x + 5, y + 5 + p, s - 10, s - 10, 5, GROUT)
 	var cap := center + Vector2(0, p)
-	if code == 0 and hidden == 0:
-		_rect(center.x - 6, center.y - 1 + p, 2, 2, NIGHT5)
-		_rect(center.x + 4, center.y - 1 + p, 2, 2, NIGHT5)
+	# A faint grey X: each family the player has not wired shows a guide on
+	# its wire's own centred band, under any dashed fault and solid wire.
+	for component in [1, 2]:
+		if not code & component:
+			_guide(cap, component)
 	for component in [1, 2]:
 		if hidden & component:
 			_wire(cap, component, true)
@@ -384,6 +388,12 @@ func _socket(center: Vector2, code: int, pressed: bool, success: bool, hidden: i
 		_zero_mark(center.x + 6, center.y + 4)
 	if hidden & code & 2:
 		_zero_mark(center.x - 10, center.y + 4)
+
+
+func _guide(center: Vector2, component: int) -> void:
+	var band := wire_band(center, component)
+	var dx := 1.0 if component == 1 else -1.0
+	_diag(band[0].x - 0.5 * dx, band[0].y, 14, dx, GUIDE)
 
 
 func _wire(center: Vector2, component: int, dashed: bool) -> void:
@@ -539,18 +549,20 @@ func _badge(x: float, y: float, count: int, face: Color) -> void:
 
 
 # Each socket's plate spans x - 7 .. x + 8, so its centre is (x + 0.5, y + 0.5):
-# the two dots sit symmetrically about it, red "\" and blue "/" are equal
-# bands that cross exactly there, and each chevron is two equal arms joined
-# at its point, centred in the gap to the next socket.
+# red "\" and blue "/" are equal bands that cross exactly there, a missing
+# colour is a faint grey guide on the same centre line, and each chevron is
+# two equal arms joined at its point, centred in the gap to the next socket.
 func _legend(y: float) -> void:
 	var xs := [61.0, 83.0, 105.0, 127.0]
 	for i in 4:
 		var x: float = xs[i]
 		_plate(x - 7, y - 7, 15, 15, 4, NIGHT4)
 		_cham(x - 4, y - 4, 9, 9, 2, GROUT)
-		if i == 0:
-			_rect(x - 3, y, 1, 1, NIGHT5)
-			_rect(x + 3, y, 1, 1, NIGHT5)
+		# Guides first, so a coloured band always lies over the grey one.
+		if not i & 1:
+			_diag(x - 3, y - 2.5, 6, 1, GUIDE)
+		if not i & 2:
+			_diag(x + 3, y - 2.5, 6, -1, GUIDE)
 		if i & 1:
 			_diag(x - 3.5, y - 2.5, 6, 1, RED, 2)
 		if i & 2:
