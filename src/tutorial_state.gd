@@ -17,7 +17,7 @@ const LEAK_AGAIN := "まだ漏電。\n"
 # Hints for a lit floor, used only while they describe the actual board.
 const LIT_HINTS := {
 	"red_one_tap": "光る床が残っている。\n中央を押してみよう。",
-	"blue_two_taps": "赤になった。\nもう1回で青になる。",
+	"blue_two_taps": "赤い配線になったね。\nもう1回タップして、\n青い配線に変えよう！",
 	"combined_three_taps": "まだ片方だけ。\n中央をもう1回。",
 }
 const LIT_GENERIC := "光る床が残っている。"

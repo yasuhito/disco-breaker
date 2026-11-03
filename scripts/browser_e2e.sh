@@ -139,7 +139,7 @@ capture_state 05 stage2-start
 cycle_grid_3x3 stage2
 assert_state "${S}.corrections.every(value => value === 0)"
 click_canvas 194 396 stage2-cycle-red
-assert_state "!${S}.floor_dark && ${S}.utterance.text.startsWith('赤になった')"
+assert_state "!${S}.floor_dark && ${S}.utterance.text === '赤い配線になったね。\\nもう1回タップして、\\n青い配線に変えよう！'"
 capture_state 06 stage2-intermediate-red
 click_canvas 194 396 stage2-cycle-blue
 assert_state "${S}.floor_dark && ${S}.passed"
