@@ -33,6 +33,9 @@ const PRESS_TIME := 0.15
 # wire glows, floors it turned dark get a gold outline and floors it newly lit
 # an outline in their own colour, all fading out (seconds).
 const CHANGE_TIME := 0.45
+# Lesson 5's first leak is explained step by step (seconds per step); input
+# stays available, any later action ends it, a bubble tap moves on or replays.
+const EXPLAIN_STEP := 2.5
 
 var model := Tutorial.new()
 var at_title := true
@@ -90,6 +93,9 @@ var _changed_wires: Array[Dictionary] = []
 var _change_node := -1
 var _change_age := SETTLED
 var _change_sequence := -1
+var _explain_sequence := -1
+var _explain_age := 0.0
+var _explain_steps: PackedStringArray = []
 # The title press has its own player, so nothing that stops lesson audio on
 # entry can cut it; only mute does.
 var _press_audio := AudioStreamPlayer.new()
@@ -144,6 +150,12 @@ func _process(delta: float) -> void:
 		queue_redraw()
 	if counting and not _counting():
 		_finish_counting()
+	# Runs in reduced motion too: only the words change.
+	if _explaining() and _explain_age < EXPLAIN_STEP * _explain_steps.size():
+		var step := _explain_step()
+		_explain_age += delta
+		if _explain_step() != step:
+			_publish_semantics()
 	# Runs in reduced motion too, where the outline is static and then gone.
 	if _change_age < CHANGE_TIME:
 		_change_age += delta
@@ -246,7 +258,34 @@ func semantic_state() -> Dictionary:
 	# Continue is shown disabled and ignores taps.
 	state["counting"] = _counting()
 	state["continue_enabled"] = model.can_continue() and not state.counting
+	state["explain_step"] = _explain_step()
+	state["explain_steps"] = _explain_steps.size() if _explaining() else 0
 	return state
+
+
+# The explanation belongs to one inspected board; any later action ends it.
+func _explaining() -> bool:
+	return not at_title and not _explain_steps.is_empty() and model.trace.size() == _explain_sequence
+
+
+# The step being shown, or -1 (none, or the foreman is still checking).
+func _explain_step() -> int:
+	if not _explaining() or _explain_age < 0.0:
+		return -1
+	return mini(int(_explain_age / EXPLAIN_STEP), _explain_steps.size() - 1)
+
+
+# How much of the counting lesson's teaching the board shows for this check:
+# 0 the original fault, 1 cancelled sockets, 2 leftover marks, 3 the counts.
+func _teach_level() -> int:
+	if _counting():
+		return -1
+	if _explaining():
+		var step := _explain_step()
+		if step < 0:
+			return -1
+		return step if _explain_steps.size() > 2 else 3
+	return 3
 
 
 func _handle_design_tap(point: Vector2) -> void:
@@ -263,6 +302,13 @@ func _handle_design_tap(point: Vector2) -> void:
 		return
 	if HOME_RECT.has_point(point):
 		_show_title()
+		return
+	# The explanation's bubble: a tap shows the next step, or replays it.
+	if _explaining() and _explain_step() >= 0 and Lesson.px(Lesson.BUBBLE).has_point(point):
+		var step := _explain_step()
+		_explain_age = EXPLAIN_STEP * (step + 1) if step < _explain_steps.size() - 1 else 0.0
+		_publish_semantics()
+		queue_redraw()
 		return
 	if model.finished:
 		if PRIMARY_RECT.has_point(point):
@@ -384,6 +430,8 @@ func _settle_animations() -> void:
 	_leak_age = SETTLED
 	_count_age = SETTLED
 	_change_age = SETTLED
+	# A resumed explanation shows its last word, already settled.
+	_explain_age = EXPLAIN_STEP * _explain_steps.size()
 	_pending_reward = ""
 	_pending_leak_sound = false
 
@@ -419,6 +467,7 @@ func _draw() -> void:
 		"since_enable": _enable_age, "since_press": _tap_age, "pressed_node": _tap_node_index,
 		"leak_age": _leak_age, "routes": _leak_routes,
 		"counting": _count_age if _counting() else -1.0,
+		"teach_level": _teach_level(), "spoken": _spoken(semantic_state()),
 		"change": {"node": _change_node, "darkened": _darkened, "lit": _lit, "wires": _changed_wires, "age": _change_age} if _showing_change() else {},
 	})
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -458,6 +507,17 @@ func _publish_semantics() -> void:
 			and _definition.lines.has("call") and int(_state.action_count) != _count_sequence:
 		_count_sequence = int(_state.action_count)
 		_count_age = 0.0
+	# Lesson 5 explains a leak step by step once the foreman has checked.
+	if not at_title and last.get("action", "") == "inspect" and int(_state.action_count) != _explain_sequence \
+			and model.counts_pairs() and _definition.lines.has("steps") and not bool(model.inspection.get("safe", true)):
+		_explain_sequence = int(_state.action_count)
+		_explain_steps = PackedStringArray()
+		if model.leak_count == 1:
+			for line in _definition.lines.steps:
+				_explain_steps.append(String(line))
+		_explain_steps.append(model.count_summary())
+		_explain_steps.append(String(model.utterance().text))
+		_explain_age = -COUNT_TIME if _counting() else 0.0
 	if not _counting():
 		_pending_reward = ""
 		_pending_leak_sound = false
@@ -517,6 +577,8 @@ func _publish_semantics() -> void:
 func _spoken(state: Dictionary) -> String:
 	if state.get("counting", false):
 		return String(_definition.lines.call)
+	if int(state.get("explain_step", -1)) >= 0:
+		return _explain_steps[int(state.explain_step)]
 	return String(state.utterance.text)
 
 
@@ -524,8 +586,19 @@ func _spoken(state: Dictionary) -> String:
 # per change, through a visually hidden live region.
 func _announce(state: Dictionary) -> void:
 	var text := "タイトル画面" if at_title else "レッスン %d / %d。親方「%s」。%s" % [
-		state.stage, state.stage_count, _spoken(state).replace("\n", ""), _button_announcement(state)]
+		state.stage, state.stage_count, _readable(_spoken(state)), _button_announcement(state)]
 	JavaScriptBridge.eval("(() => { let live = document.getElementById('disco-breaker-live'); if (!live) { live = document.createElement('div'); live.id = 'disco-breaker-live'; live.setAttribute('aria-live', 'polite'); live.setAttribute('role', 'status'); live.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap'; document.body.appendChild(live); } const text = %s; if (live.textContent !== text) live.textContent = text; })()" % JSON.stringify(text))
+
+
+# A bubble's lines as one announcement: a line without closing punctuation
+# (such as 「赤：上の段 1こ→あまり1こ」) is closed with 「。」 so lines stay apart.
+static func _readable(text: String) -> String:
+	var result := ""
+	for line in text.split("\n"):
+		result += line
+		if not line.is_empty() and not line[-1] in ["。", "！", "？", "、"]:
+			result += "。"
+	return result
 
 
 # The bottom button as drawn (lesson_artwork.gd draw()): its label and

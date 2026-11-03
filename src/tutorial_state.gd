@@ -88,28 +88,42 @@ func _build_stages() -> Array[Dictionary]:
 				# Spoken while the foreman checks after being called (the view's presentation).
 				"call": "電気がもれていないか、\nチェックするよ！"},
 		},
+		# Lessons 5-7 teach the check with leftover marks counted in pairs on
+		# the inspection lines ("counts_pairs"): red counts its leftovers on the
+		# top row, blue on the left column ("focus" colours first, the other
+		# colour too whenever it has leftovers).
 		{
-			"id": "crossing_trap", "title": "見えない漏電", "size": 3, "inspect": "call",
+			"id": "crossing_trap", "title": "暗いのに、安全じゃない？", "size": 3, "inspect": "call",
 			"hidden": {4: RED}, "preset": {1: RED, 7: RED}, "target": -1,
-			"lines": {"open": "これも全部暗い。\n親方を呼ぼう。",
-				"explain": "漏電あり！床は2本で暗い。\n赤が上から下へ抜けた。\n上下を外し、破線に赤を。",
-				"lit": "光る床がある。\n暗くしてから呼んでね。", "lit_seen": "光る床がある。\n破線と同じにしよう。",
-				"dark": "これも全部暗い。\n親方を呼ぼう。", "dark_seen": "暗くなった。\nもう一度親方を呼ぼう。",
-				"ok": "検査合格！\n漏電が直った。"},
+			"call_label": "チェックして！", "counts_pairs": true, "focus": [RED],
+			"lines": {"open": "ちらつきは全部消えてるね。\nでも、これで安全かな？",
+				"lit": "光る床がある。\nまず全部暗くしよう。",
+				"dark": "暗くなったね。\nチェックしよう！", "dark_seen": "暗くなったね。\nもう一度チェックしよう！",
+				# Spoken while the foreman checks after being called (the view's presentation).
+				"call": "電気がもれていないか、\nチェックするよ！",
+				# The step-by-step explanation of the first leak (the view's presentation).
+				"steps": ["電気がもれているよ！\n破線は、元の故障だよ。", "同じ場所の同じ色は、\n打ち消し合って消えるよ。", "打ち消されずに残った所に\n印をつけたよ。"],
+				# Only the untouched trap is repaired by exactly this.
+				"unsafe_preset": "あまりがあると危ないよ。\n上と下を外して、\n真ん中に赤を置こう！",
+				"unsafe": "あまりがあると危ないよ。\nあまった印が\nなくなるように直そう。",
+				"unsafe_again": "まだ電気がもれているよ。\nあまった印が\nなくなるように直そう。",
+				"ok": "よし、電気はもれてないね。"},
 		},
 		{
-			"id": "boundary_single", "title": "端の床", "size": 3, "inspect": "auto",
+			"id": "boundary_single", "title": "はしっこの床", "size": 3, "inspect": "auto",
 			"hidden": {0: RED} if boundary_phase == 0 else {2: BLUE},
 			"preset": {}, "target": 0 if boundary_phase == 0 else 2,
-			"lines": {"open": "内側は2枚が切り替わる。\n端なら1枚だけのことも。\n左上を1回タップ。", "ok": "いいぞ！ 端は1枚だけ。"}
+			"counts_pairs": true, "focus": [RED] if boundary_phase == 0 else [BLUE],
+			"lines": {"open": "はしっこの床は\n1つだけ光ることがあるよ。\n左上を1回タップしよう！", "unsafe": "電気がもれているよ！", "ok": "いいぞ！"}
 				if boundary_phase == 0 else
-				{"open": "次は端の青い床。\n右上を2回タップ。\n赤から青に変わるよ。", "ok": "いいぞ！ 端の青も直った。"},
+				{"open": "次は青。\n右上を2回タップしよう！", "unsafe": "電気がもれているよ！", "ok": "いいぞ！"},
 		},
 		{
-			"id": "graduation_3x3", "title": "自由練習", "size": 3, "inspect": "call",
+			"id": "graduation_3x3", "title": "自分でやってみよう", "size": 3, "inspect": "call",
 			"hidden": {4: RED, 2: BLUE}, "preset": {}, "target": -1,
-			"lines": {"open": "小さな床で練習しよう。\n赤と青の点滅を止めよう！", "lit": "点滅はまだ残っている。",
-				"dark": "暗くなった。\n親方を呼ぼう。", "ok": "卒業検査合格！"},
+			"call_label": "チェックして！", "counts_pairs": true, "focus": [RED, BLUE],
+			"lines": {"open": "赤と青がちらついてるね。\n全部暗くして、\nチェックしよう！", "lit": "光る床がある。\nまず全部暗くしよう。",
+				"dark": "暗くなったね。\nチェックしよう！", "unsafe": "電気がもれているよ！", "ok": "よし、電気はもれてないね。"},
 		},
 	]
 
@@ -302,6 +316,8 @@ func utterance() -> Dictionary:
 		return {"kind": "done", "text": SKIPPED_TEXT if skipped else DONE_TEXT}
 	var lines: Dictionary = definition().lines
 	if passed():
+		if counts_pairs():
+			return {"kind": "safe", "text": String(lines.ok) + "\n" + count_summary()}
 		return {"kind": "safe", "text": lines.ok}
 	if not inspection.is_empty():
 		return {"kind": "unsafe", "text": _leak_line()}
@@ -315,6 +331,14 @@ func utterance() -> Dictionary:
 
 func _leak_line() -> String:
 	var d := definition()
+	if counts_pairs():
+		var lines: Dictionary = d.lines
+		if lines.has("unsafe_preset"):
+			# Lesson 5: the explanation's last word; its count was the step before.
+			if leak_count == 1 and _matches(d.preset):
+				return String(lines.unsafe_preset)
+			return String(lines.unsafe_again if leak_count > 1 else lines.unsafe)
+		return String(lines.unsafe) + "\n" + count_summary()
 	var red := bool(inspection.get("red_crossing", false))
 	var blue := bool(inspection.get("blue_crossing", false))
 	var color: String = LEAK_COLOR["both" if red and blue else ("red" if red else "blue")]
@@ -334,8 +358,6 @@ func _lit_line() -> String:
 	var d := definition()
 	var lines: Dictionary = d.lines
 	if lines.has("lit"):
-		if lines.has("lit_seen") and leak_seen:
-			return String(lines.lit_seen)
 		return String(lines.lit)
 	var target: int = d.target
 	var others_clean := true
@@ -354,6 +376,69 @@ func _lit_line() -> String:
 			if others_clean and at_target in [RED, BLUE]:
 				return LIT_HINTS.combined_three_taps
 	return LIT_GENERIC
+
+
+func counts_pairs() -> bool:
+	return bool(definition().get("counts_pairs", false))
+
+
+# A colour's leftovers (fault XOR wiring) on its inspection line, in line order.
+func cut_marks(component: int) -> Array[int]:
+	var d := definition()
+	var residual := _residual_support(component)
+	var marks: Array[int] = []
+	for node in (d.red_cut if component == RED else d.blue_cut):
+		if residual.has(int(node)):
+			marks.append(int(node))
+	return marks
+
+
+# The colours a check reports: the lesson's focus colours, then the other
+# colour whenever it has leftovers anywhere (it may be what fails).
+func counted_components() -> Array[int]:
+	var result: Array[int] = []
+	for component in definition().get("focus", [RED, BLUE]):
+		result.append(int(component))
+	for component in [RED, BLUE]:
+		if not result.has(component) and not _residual_support(component).is_empty():
+			result.append(component)
+	return result
+
+
+const COUNT_PLACE := {RED: "上の段", BLUE: "左の列"}
+const COUNT_COLOR := {RED: "赤", BLUE: "青"}
+
+
+# Two lines counting the marks on each reported line and what is left over
+# after pairing them: the real numbers, never an assumed zero.
+func count_summary() -> String:
+	var colors := counted_components()
+	if colors.size() == 1:
+		return count_text(colors[0], cut_marks(colors[0]).size())
+	var lines: PackedStringArray = []
+	for component in colors:
+		lines.append(count_line(component, cut_marks(component).size()))
+	return "\n".join(lines)
+
+
+# One colour reported alone: its marks, then what pairing them leaves.
+static func count_text(component: int, count: int) -> String:
+	return "%sの%sい印は%dこ。\n%s" % [COUNT_PLACE[component], COUNT_COLOR[component], count, _pair_text(count)]
+
+
+# One of two colours reported together, on one line.
+static func count_line(component: int, count: int) -> String:
+	return "%s：%s %dこ→あまり%dこ" % [COUNT_COLOR[component], COUNT_PLACE[component], count, count % 2]
+
+
+static func _pair_text(count: int) -> String:
+	if count == 0:
+		return "あまりなし。"
+	if count % 2 == 0:
+		return "%dこで%d組、あまり0こ。" % [count, count / 2]
+	if count == 1:
+		return "組にならず、1こあまり。"
+	return "%d組できて、1こあまり。" % (count / 2)
 
 
 func _matches(wiring: Dictionary) -> bool:

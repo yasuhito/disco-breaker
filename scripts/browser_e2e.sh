@@ -80,6 +80,12 @@ wait_for_lesson_entry() {
   chrome-devtools-axi eval "async () => { const until = performance.now() + 3000; while (window.discoBreakerState?.screen !== 'tutorial') { if (performance.now() > until) throw new Error('lesson did not open'); await new Promise(resolve => setTimeout(resolve, 20)); } await new Promise(resolve => setTimeout(resolve, 350)); return true; }" >/dev/null
 }
 
+# Lessons 4 and 5 check for 1.0 s before the verdict is presented; wait (in
+# the page, at most 3 s) for the check to end before relying on it.
+wait_for_check_end() {
+  chrome-devtools-axi eval "async () => { const until = performance.now() + 3000; while (window.discoBreakerState.counting) { if (performance.now() > until) throw new Error('the check did not end'); await new Promise(resolve => setTimeout(resolve, 20)); } return true; }" >/dev/null
+}
+
 assert_state() {
   local expression="$1"
   chrome-devtools-axi eval "() => { if (!(${expression})) throw new Error('state assertion failed'); return JSON.stringify(window.discoBreakerState); }" >/dev/null
@@ -196,14 +202,15 @@ assert_state "${S}.stage_id === 'crossing_trap' && ${S}.floor_dark && ${S}.can_c
 capture_state 15 stage5-start
 click_canvas 194 760 stage5-call-trap
 assert_state "${S}.inspection.red_crossing && !${S}.inspection.blue_crossing && !${S}.passed && !${S}.can_continue && ${S}.fault_revealed"
-assert_state "${S}.utterance.text.startsWith('漏電あり！床は2本で暗い。')"
-assert_state "document.getElementById('disco-breaker-live').textContent.includes('漏電あり！床は2本で暗い。')"
+# Lesson 5 checks for 1.0 s, then explains the leak step by step.
+wait_for_check_end
+assert_state "${S}.explain_step >= 0 && document.getElementById('disco-breaker-live').textContent.includes('電気がもれているよ！') && !document.getElementById('disco-breaker-live').textContent.includes('漏電')"
 capture_state 16 stage5-leak-explained 2.3
 chrome-devtools-axi screenshot artifacts/tutorial-crossing-trap.png >/dev/null
 click_canvas 194 760 stage5-no-continue-after-leak
 assert_state "${S}.stage === 5 && ${S}.last_action.action === 'inspect'"
 click_canvas 194 304 stage5-repair-top 3
-assert_state "!${S}.floor_dark && ${S}.fault_revealed && ${S}.utterance.text.includes('破線')"
+assert_state "!${S}.floor_dark && ${S}.fault_revealed && ${S}.explain_step === -1 && ${S}.utterance.text === '光る床がある。\\nまず全部暗くしよう。'"
 capture_state 17 stage5-repair-lit
 click_canvas 194 488 stage5-repair-bottom 3
 click_canvas 194 396 stage5-repair-center
@@ -211,6 +218,8 @@ assert_state "${S}.floor_dark && ${S}.can_call_foreman && ${S}.utterance.kind ==
 capture_state 18 stage5-repair-dark
 click_canvas 194 760 stage5-call-repaired
 assert_state "${S}.passed && ${S}.can_continue"
+wait_for_check_end
+assert_state "${S}.continue_enabled && ${S}.utterance.text === 'よし、電気はもれてないね。\\n上の段の赤い印は0こ。\\nあまりなし。'"
 capture_state 19 stage5-pass
 click_canvas 194 760 stage5-continue
 
@@ -232,7 +241,7 @@ click_canvas 194 760 stage6-continue
 
 capture_state 25 stage7-start
 click_canvas 194 760 stage7-disabled-call
-assert_state "!${S}.can_call_foreman && ${S}.last_action.action === 'next_stage' && document.getElementById('disco-breaker-live').textContent.endsWith('親方を呼ぶ はまだ押せない')"
+assert_state "!${S}.can_call_foreman && ${S}.last_action.action === 'next_stage' && document.getElementById('disco-breaker-live').textContent.endsWith('チェックして！ はまだ押せない')"
 cycle_grid_3x3 stage7
 assert_state "${S}.grid_size === 3 && ${S}.corrections.every(value => value === 0)"
 capture_state 26 two-red-flickers-before
@@ -242,13 +251,13 @@ capture_state 27 two-red-flickers-after
 click_canvas 102 304 stage7-blue-leak-corner 2
 click_canvas 194 304 stage7-blue-leak-top 2
 click_canvas 194 760 stage7-call-blue-leak
-assert_state "${S}.inspection.blue_crossing && !${S}.inspection.red_crossing && ${S}.utterance.text === '漏電あり！\n青い線が左から右へ。'"
+assert_state "${S}.inspection.blue_crossing && !${S}.inspection.red_crossing && ${S}.utterance.text === '電気がもれているよ！\n赤：上の段 0こ→あまり0こ\n青：左の列 1こ→あまり1こ'"
 capture_state 28 stage7-blue-leak 2.3
 click_canvas 194 304 stage7-both-leak-top 1
 click_canvas 194 488 stage7-both-leak-bottom
 click_canvas 194 396 stage7-both-leak-center 3
 click_canvas 194 760 stage7-call-both-leak
-assert_state "${S}.inspection.blue_crossing && ${S}.inspection.red_crossing && ${S}.utterance.text === '漏電あり！\n赤も青も抜けている。'"
+assert_state "${S}.inspection.blue_crossing && ${S}.inspection.red_crossing && ${S}.utterance.text === '電気がもれているよ！\n赤：上の段 1こ→あまり1こ\n青：左の列 1こ→あまり1こ'"
 capture_state 29 stage7-both-leak 2.3
 click_canvas 102 304 stage7-undo-corner 2
 click_canvas 194 304 stage7-undo-top
@@ -291,6 +300,7 @@ click_canvas 194 304 skip-run-stage5-repair-top 3
 click_canvas 194 488 skip-run-stage5-repair-bottom 3
 click_canvas 194 396 skip-run-stage5-repair-center
 click_canvas 194 760 skip-run-stage5-call-again
+wait_for_check_end
 click_canvas 194 760 skip-run-stage5-continue
 assert_state "${S}.stage_id === 'boundary_single'"
 click_canvas 102 304 skip-run-stage6-red

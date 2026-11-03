@@ -146,6 +146,7 @@ try {
   for(let i=0;i<3;i++) await tap(page,194,488);
   await tap(page,194,396);
   await tap(page,194,760); // repaired trap
+  await page.waitForFunction(() => !window.discoBreakerState.counting, null, { timeout: 5000 }); // lesson 5 checks for 1.0 s
   await tap(page,194,760); // boundary
   await tap(page,102,304);
   await tap(page,194,760);

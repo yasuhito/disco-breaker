@@ -31,6 +31,7 @@ func _init() -> void:
 	_test_crossing_trap_observe_then_repair()
 	_test_crossing_trap_alternatives()
 	_test_crossing_trap_fixed_before_inspection()
+	_test_counts_match_inspection()
 	_test_graduation()
 	_test_boundary_lesson()
 	_test_final_skip_and_replay()
@@ -57,7 +58,7 @@ func _init() -> void:
 	_test_electrical_sounds()
 	_test_color_families_and_wire_directions()
 	if failures.is_empty():
-		print("PASS: 33 tutorial tests")
+		print("PASS: 34 tutorial tests")
 		quit(0)
 	else:
 		for failure in failures:
@@ -171,20 +172,21 @@ func _test_independent_crossing_parity() -> void:
 func _test_crossing_trap_observe_then_repair() -> void:
 	var model := _at(4)
 	_expect(model.is_dark() and model.can_call_foreman() and not model.fault_revealed(), "the trap looks cleared and hides its fault before inspection")
-	_expect(model.utterance().text == "これも全部暗い。\n親方を呼ぼう。", "the trap opens by asking for the foreman")
+	_expect(model.utterance().text == "ちらつきは全部消えてるね。\nでも、これで安全かな？" and String(model.definition().title) == "暗いのに、安全じゃない？", "the trap opens by asking whether a dark floor is safe")
 	var verdict := model.inspect_floor()
 	_expect(verdict.red_crossing and not verdict.blue_crossing and not verdict.safe, "trap keeps its odd red class only")
 	_expect(not model.passed() and not model.can_continue() and not model.next_stage(), "the first inspection is a leak, not a pass")
-	_expect(model.utterance().kind == "unsafe" and model.utterance().text.begins_with("漏電あり！床は2本で暗い。"), "the explanation describes the trap")
+	_expect(model.utterance() == {"kind": "unsafe", "text": "あまりがあると危ないよ。\n上と下を外して、\n真ん中に赤を置こう！"}, "only the untouched trap gets the top-and-bottom repair hint")
+	_expect(model.cut_marks(Tutorial.RED) == [1] and model.count_summary() == "上の段の赤い印は1こ。\n組にならず、1こあまり。", "the trap's leftovers 1, 4, 7 leave one mark on the top row")
 	_expect(model.fault_revealed() and not model.can_call_foreman(), "the leak reveals the fault; the call waits for a change")
 	model.tap_node(0, 1)
 	_expect(not model.is_dark() and model.fault_revealed(), "repairs keep the original fault visible in lesson 5")
-	_expect(model.utterance().text == "光る床がある。\n破線と同じにしよう。", "lit repair hint refers to the dashed fault")
+	_expect(model.utterance().text == "光る床がある。\nまず全部暗くしよう。", "a lit repair is asked to go dark first")
 	var taps := 1 + _wire(model, {4: Tutorial.RED})
 	_expect(taps == 7, "the canonical repair matches the fault in seven taps")
-	_expect(model.is_dark() and model.can_call_foreman() and model.utterance().text == "暗くなった。\nもう一度親方を呼ぼう。", "a dark repair asks for another inspection")
+	_expect(model.is_dark() and model.can_call_foreman() and model.utterance().text == "暗くなったね。\nもう一度チェックしよう！", "a dark repair asks for another check")
 	_expect(model.inspect_floor().safe and model.can_continue(), "a repaired, inspected trap passes")
-	_expect(model.utterance().text == "検査合格！\n漏電が直った。", "the pass is announced")
+	_expect(model.utterance().text == "よし、電気はもれてないね。\n上の段の赤い印は0こ。\nあまりなし。", "the canonical pass counts its zero marks")
 	model.next_stage()
 	_expect(model.definition().id == "boundary_single" and not model.fault_revealed(), "the next lesson hides the fault again")
 
@@ -207,12 +209,58 @@ func _test_crossing_trap_alternatives() -> void:
 	_wire(loop, {1: Tutorial.RED, 2: Tutorial.RED, 5: Tutorial.RED})
 	_expect(loop.inspect_floor().safe and loop.can_continue(), "the loop-shaped leftover passes")
 	_expect(Array(loop._residual_support(Tutorial.RED)) == [1, 2, 4, 5], "the loop keeps its leftovers")
+	_expect(loop.utterance().text == "よし、電気はもれてないね。\n上の段の赤い印は2こ。\n2こで1組、あまり0こ。", "a safe alternative counts its two marks as one pair, not as zero")
+	var other := _at(4)
+	_wire(other, {1: Tutorial.RED, 8: Tutorial.RED, 7: Tutorial.EMPTY})
+	other.inspect_floor()
+	_expect(other.is_dark() and not other.inspection.safe and other.utterance().text == "あまりがあると危ないよ。\nあまった印が\nなくなるように直そう。", "another leaking board gets a hint about its own leftovers, not the trap's repair")
+	# Red repaired, but a blue row across the left column: dark, and unsafe
+	# only because of blue, so blue is counted too.
+	var blue := _at(4)
+	_wire(blue, {1: Tutorial.EMPTY, 7: Tutorial.EMPTY, 3: Tutorial.BLUE, 4: Tutorial.BOTH, 5: Tutorial.BLUE})
+	blue.inspect_floor()
+	_expect(blue.is_dark() and not blue.inspection.safe and blue.inspection.blue_crossing and not blue.inspection.red_crossing, "fixture: lesson 5 leaking through blue only")
+	_expect(blue.counted_components() == [Tutorial.RED, Tutorial.BLUE] and blue.count_summary() == "赤：上の段 0こ→あまり0こ\n青：左の列 1こ→あまり1こ", "a blue leak in lesson 5 is counted on the left column too")
 	var again := _at(4)
 	again.inspect_floor()
 	again.tap_node(0, 0)
 	for tap in 3:
 		again.tap_node(0, 0)
-	_expect(not again.inspect_floor().safe and again.utterance().text == "まだ漏電。\n赤い線が上から下へ。", "a second leak says it is still leaking")
+	_expect(not again.inspect_floor().safe and again.utterance().text == "まだ電気がもれているよ。\nあまった印が\nなくなるように直そう。", "a second leak says it is still leaking")
+
+
+# Lessons 5-7 count each colour's leftovers on its inspection line. Over many
+# boards the counts agree with the authoritative inspection: a colour's count
+# is odd exactly when the inspection finds it crossing, every colour that
+# fails is reported, and a pass never hides marks (the words state the count).
+func _test_counts_match_inspection() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20261104
+	var seen_pair := false
+	var seen_other := false
+	for case in [[4, 0], [5, 0], [5, 1], [6, 0]]:
+		for sample in 1500:
+			var model := _at(case[0], case[1])
+			for node in 9:
+				model.corrections[node] = rng.randi_range(0, 3)
+			var verdict := model._inspect_residual()
+			var colors := model.counted_components()
+			for component in [Tutorial.RED, Tutorial.BLUE]:
+				var crossing := bool(verdict.red_crossing if component == Tutorial.RED else verdict.blue_crossing)
+				var count := model.cut_marks(component).size()
+				_expect((count % 2 == 1) == crossing, "lesson %d: the %s count's parity is the inspection's" % [case[0] + 1, "red" if component == Tutorial.RED else "blue"])
+				if crossing:
+					_expect(colors.has(component), "lesson %d: a failing colour is always reported" % (case[0] + 1))
+				for node in model.cut_marks(component):
+					_expect(Array(model._residual_support(component)).has(node), "marks are real leftovers")
+			if bool(verdict.safe) and model.is_dark():
+				var summary := model.count_summary()
+				for component in colors:
+					var count := model.cut_marks(component).size()
+					_expect(summary.contains("%dこ" % count), "a pass states the real count")
+					seen_pair = seen_pair or count == 2
+				seen_other = seen_other or colors.size() > model.definition().focus.size()
+	_expect(seen_pair and seen_other, "the sample includes safe boards with a pair, and boards reporting the other colour")
 
 
 func _test_crossing_trap_fixed_before_inspection() -> void:
@@ -220,9 +268,9 @@ func _test_crossing_trap_fixed_before_inspection() -> void:
 	# inspection of the repaired, dark board passes. No unsafe step is forced.
 	var model := _at(4)
 	model.tap_node(0, 1)
-	_expect(model.utterance().text == "光る床がある。\n暗くしてから呼んでね。" and not model.fault_revealed(), "no fault reveal or dashed hint before an inspection")
+	_expect(model.utterance().text == "光る床がある。\nまず全部暗くしよう。" and not model.fault_revealed(), "no fault reveal or dashed hint before an inspection")
 	_wire(model, {4: Tutorial.RED})
-	_expect(model.utterance().text == "これも全部暗い。\n親方を呼ぼう。", "a dark board asks for the first inspection")
+	_expect(model.utterance().text == "暗くなったね。\nチェックしよう！", "a dark board asks for the first check")
 	_expect(model.inspect_floor().safe and model.can_continue() and not model.leak_seen, "a pass without a prior leak is accepted")
 
 
@@ -341,7 +389,7 @@ func _test_latest_utterance() -> void:
 	_expect(three_taps.utterance() == {"kind": "safe", "text": "いいぞ！\n赤と青のちらつきが\nどちらも直ったね！"} and three_taps.passed(), "lesson 3's third tap passes with its approved praise")
 	var check := _at(3)
 	_expect(String(check.definition().title) == "でも、安全かな？" and check.utterance() == {"kind": "start", "text": "ちらつきは全部消えたね。\nでも、電気がもれてるかも。\n安全かどうかチェックしよう！"} and check.call_label() == "チェックして！", "lesson 4 opens with its approved title, instruction and check button")
-	_expect(_at(4).call_label() == "親方を呼ぶ" and _at(6).call_label() == "親方を呼ぶ", "lessons 5 and 7 keep 「親方を呼ぶ」")
+	_expect(_at(4).call_label() == "チェックして！" and _at(6).call_label() == "チェックして！", "lessons 5 and 7 also check with 「チェックして！」")
 	_expect(String(check.definition().lines.call) == "電気がもれていないか、\nチェックするよ！" and String(check.definition().lines.ok) == "よし、電気はもれてないね。\nこれで安心！", "lesson 4 checks and praises with its approved lines")
 	_expect(not bool(check.definition().get("teaches_counting", true)) and _at(4).definition().get("teaches_counting", true) and _at(6).definition().get("teaches_counting", true), "only lesson 4 hides the counting marks")
 	check.inspect_floor()
@@ -353,7 +401,7 @@ func _test_latest_utterance() -> void:
 	_expect(both.utterance().text == Tutorial.LIT_HINTS.combined_three_taps, "still one colour placed")
 	var final_lesson := _at(6)
 	_wire(final_lesson, {4: Tutorial.RED, 2: Tutorial.BLUE})
-	_expect(final_lesson.utterance() == {"kind": "ready", "text": "暗くなった。\n親方を呼ぼう。"}, "a dark practice floor asks for the foreman")
+	_expect(final_lesson.utterance() == {"kind": "ready", "text": "暗くなったね。\nチェックしよう！"}, "a dark practice floor asks for a check")
 
 
 func _test_leak_lines_follow_inspection() -> void:
@@ -361,10 +409,10 @@ func _test_leak_lines_follow_inspection() -> void:
 		[0, {1: 1, 7: 1}, "暗いけど漏電！\n赤い線が上から下へ。"],
 		[1, {3: 2, 5: 2}, "暗いけど漏電！\n青い線が左から右へ。"],
 		[2, {1: 1, 3: 2, 5: 2, 7: 1}, "暗いけど漏電！\n赤も青も抜けている。"],
-		[5, {3: 1, 6: 1}, "暗いけど漏電！\n赤い線が上から下へ。"],
-		[6, {1: 1, 2: 2, 7: 1}, "漏電あり！\n赤い線が上から下へ。"],
-		[6, {0: 2, 1: 2, 4: 1}, "漏電あり！\n青い線が左から右へ。"],
-		[6, {0: 2, 1: 3, 7: 1}, "漏電あり！\n赤も青も抜けている。"],
+		[5, {3: 1, 6: 1}, "電気がもれているよ！\n上の段の赤い印は1こ。\n組にならず、1こあまり。"],
+		[6, {1: 1, 2: 2, 7: 1}, "電気がもれているよ！\n赤：上の段 1こ→あまり1こ\n青：左の列 0こ→あまり0こ"],
+		[6, {0: 2, 1: 2, 4: 1}, "電気がもれているよ！\n赤：上の段 0こ→あまり0こ\n青：左の列 1こ→あまり1こ"],
+		[6, {0: 2, 1: 3, 7: 1}, "電気がもれているよ！\n赤：上の段 1こ→あまり1こ\n青：左の列 1こ→あまり1こ"],
 		[3, {1: 1, 4: 2, 7: 1}, "漏電あり！\n赤い線が上から下へ。"],
 	]
 	for case in cases:
@@ -393,7 +441,28 @@ func _test_foreman_copy_fits_bubble() -> void:
 		model.boundary_phase = phase
 		for stage in model.stages():
 			for line in stage.lines.values():
-				copy.append(String(line))
+				if line is Array:
+					for step in line:
+						copy.append(String(step))
+				else:
+					copy.append(String(line))
+			# Counting lessons speak generated counts: every count on a 3 x 3 line,
+			# alone, as the verdict's tail, and both colours together.
+			if bool(stage.get("counts_pairs", false)):
+				for count in 4:
+					for component in [Tutorial.RED, Tutorial.BLUE]:
+						var alone := Tutorial.count_text(component, count)
+						copy.append(alone)
+						copy.append(String(stage.lines.ok) + "\n" + alone)
+						# Lesson 5's leak lines are fixed; lessons 6 and 7 append the count.
+						if not stage.lines.has("unsafe_preset"):
+							copy.append(String(stage.lines.unsafe) + "\n" + alone)
+					for blue in 4:
+						var both := Tutorial.count_line(Tutorial.RED, count) + "\n" + Tutorial.count_line(Tutorial.BLUE, blue)
+						copy.append(both)
+						copy.append(String(stage.lines.ok) + "\n" + both)
+						if stage.lines.has("unsafe") and not stage.lines.has("unsafe_preset"):
+							copy.append(String(stage.lines.unsafe) + "\n" + both)
 	# The bubble holds three 24 px lines in its 114-unit text column, also in bold.
 	# The human-approved third lines of lessons 1, 2 and 4 are wider: they must
 	# still stay on the paper (bubble 256 px - 14 px text inset - 2 px ink
@@ -415,7 +484,10 @@ func _test_foreman_copy_fits_bubble() -> void:
 		var titled := Tutorial.new()
 		titled.boundary_phase = phase
 		for stage in titled.stages():
-			_expect(bold.get_string_size(String(stage.title), HORIZONTAL_ALIGNMENT_LEFT, -1, 30).x <= 358.0, "lesson title is wider than the screen: %s" % stage.title)
+			# Lesson 5's approved title is 361 px: inside the 390 px screen with a
+			# 13 px right margin; it alone may use up to a 12 px margin.
+			var title_limit := 362.0 if String(stage.title) == "暗いのに、安全じゃない？" else 358.0
+			_expect(bold.get_string_size(String(stage.title), HORIZONTAL_ALIGNMENT_LEFT, -1, 30).x <= title_limit, "lesson title is wider than the screen: %s" % stage.title)
 			for character in String(stage.title):
 				_expect(regular.has_char(character.unicode_at(0)), "bundled font lacks title glyph: %s" % character)
 	# Each lesson's call button label (Bold 30 px, centred) keeps 16 px each
