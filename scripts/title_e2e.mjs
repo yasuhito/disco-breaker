@@ -206,6 +206,10 @@ try {
   await tap(quiet,194,304);
   await tap(quiet,194,488);
   assert.equal((await state(quiet)).utterance.kind,'unsafe');
+  // The last tap darkened a floor: its wiring outline is a separate, static
+  // 0.45 s frame in reduced motion. Compare the leak explanation after it.
+  assert.ok((await feedback(quiet)).wiring.darkened.length > 0, 'the darkening tap shows its static outline');
+  await quiet.waitForFunction(() => !window.discoBreakerFeedback.wiring.active, null, { timeout: 2000 });
   const leakStill = await quiet.screenshot({path:`${out}/tutorial-reduced-motion-leak.png`});
   await quiet.waitForTimeout(1100);
   assert.deepEqual(await quiet.screenshot(),leakStill,'reduced-motion leak explanation is static and complete at once');
