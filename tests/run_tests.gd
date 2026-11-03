@@ -332,6 +332,13 @@ func _test_latest_utterance() -> void:
 	_expect(two_taps.utterance() == {"kind": "mistake", "text": "赤い配線になったね。\nもう1回タップして、\n青い配線に変えよう！"} and not two_taps.passed(), "lesson 2's first tap shows the approved red-to-blue hint")
 	two_taps.tap_node(1, 1)
 	_expect(two_taps.utterance() == {"kind": "safe", "text": "いいぞ！\n青い床のちらつきが\n直ったね！"} and two_taps.passed(), "lesson 2's second tap turns the hint into the blue praise")
+	var three_taps := _at(2)
+	_expect(String(three_taps.definition().title) == "両方のちらつきを直そう" and three_taps.utterance() == {"kind": "start", "text": "赤も青もちらついてるね。\n真ん中を3回タップして、\n両方の配線で直そう！"}, "lesson 3 opens with its approved title and instruction")
+	for tap in 2:
+		three_taps.tap_node(1, 1)
+		_expect(three_taps.utterance().text == Tutorial.LIT_HINTS.combined_three_taps and not three_taps.passed(), "lesson 3 keeps its one-colour hint after tap %d" % (tap + 1))
+	three_taps.tap_node(1, 1)
+	_expect(three_taps.utterance() == {"kind": "safe", "text": "いいぞ！\n赤と青のちらつきが\nどちらも直ったね！"} and three_taps.passed(), "lesson 3's third tap passes with its approved praise")
 	var both := _at(2)
 	both.tap_node(1, 1)
 	_expect(both.utterance().text == Tutorial.LIT_HINTS.combined_three_taps, "one colour placed")

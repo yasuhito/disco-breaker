@@ -147,6 +147,7 @@ capture_state 07 stage2-pass
 click_canvas 194 760 stage2-continue
 
 capture_state 08 stage3-start
+assert_state "${S}.stage_id === 'combined_three_taps' && ${S}.title === '両方のちらつきを直そう' && ${S}.utterance.text === '赤も青もちらついてるね。\\n真ん中を3回タップして、\\n両方の配線で直そう！'"
 chrome-devtools-axi screenshot artifacts/tutorial-dialogue-wrap.png >/dev/null
 cycle_grid_3x3 stage3
 assert_state "${S}.corrections.every(value => value === 0)"
@@ -155,7 +156,7 @@ capture_state 09 stage3-intermediate-red
 click_canvas 194 396 stage3-cycle-blue
 capture_state 10 stage3-intermediate-blue
 click_canvas 194 396 stage3-cycle-both
-assert_state "${S}.passed"
+assert_state "${S}.passed && ${S}.utterance.text === 'いいぞ！\\n赤と青のちらつきが\\nどちらも直ったね！'"
 capture_state 11 stage3-pass
 click_canvas 194 760 stage3-continue
 

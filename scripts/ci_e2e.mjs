@@ -130,9 +130,10 @@ try {
   await bottom();
 
   await captureState("stage3-start");
+  await assertState("state.title === '両方のちらつきを直そう' && state.utterance.text === '赤も青もちらついてるね。\\n真ん中を3回タップして、\\n両方の配線で直そう！'", "stage3 opens with its approved copy");
   await cycleGrid3x3("stage3");
   await box(4, 3);
-  await assertState("state.passed", "stage3 solve passes");
+  await assertState("state.passed && state.utterance.text === 'いいぞ！\\n赤と青のちらつきが\\nどちらも直ったね！'", "stage3 solve passes with its approved praise");
   await captureState("stage3-pass");
   await bottom();
 
