@@ -77,9 +77,11 @@ func _build_stages() -> Array[Dictionary]:
 			"lines": {"open": "赤も青もちらついてるね。\n真ん中を3回タップして、\n両方の配線で直そう！", "ok": "いいぞ！\n赤と青のちらつきが\nどちらも直ったね！"},
 		},
 		{
-			"id": "foreman_inspection", "title": "親方の検査", "size": 3, "inspect": "call",
+			"id": "foreman_inspection", "title": "でも、安全かな？", "size": 3, "inspect": "call",
 			"hidden": {4: BOTH}, "preset": {4: BOTH}, "target": -1,
-			"lines": {"open": "床は全部暗い。\nでも安全かは別の話。", "lit": "光る床がある。\n暗くしてから呼んでね。",
+			# This lesson's own label for the call button (others say 「親方を呼ぶ」).
+			"call_label": "チェックして！",
+			"lines": {"open": "ちらつきは全部消えたね。\nでも、電気がもれてるかも。\n安全かどうかチェックしよう！", "lit": "光る床がある。\n暗くしてから呼んでね。",
 				"dark": "暗くなった。\n親方を呼ぼう。", "ok": "検査合格！\n漏電はないぞ。",
 				# Spoken while the foreman counts after being called (the view's presentation).
 				"call": "上の段と左の列を\n数えるぞ。"},
@@ -158,6 +160,11 @@ func _faces(size: int, component: int) -> Array[Dictionary]:
 
 func definition() -> Dictionary:
 	return stages()[stage_index]
+
+
+# The bottom button's label while it calls the foreman.
+func call_label() -> String:
+	return String(definition().get("call_label", "親方を呼ぶ"))
 
 
 func auto_inspects() -> bool:

@@ -164,6 +164,7 @@ capture_state 11 stage3-pass
 click_canvas 194 760 stage3-continue
 
 assert_state "${S}.stage_id === 'foreman_inspection' && ${S}.inspection_mode === 'call' && ${S}.can_call_foreman"
+assert_state "${S}.title === 'でも、安全かな？' && ${S}.utterance.text === 'ちらつきは全部消えたね。\\nでも、電気がもれてるかも。\\n安全かどうかチェックしよう！' && document.getElementById('disco-breaker-live').textContent.endsWith('チェックして！ を押せる')"
 capture_state 12 stage4-start
 cycle_grid_3x3 stage4
 assert_state "${S}.can_call_foreman"

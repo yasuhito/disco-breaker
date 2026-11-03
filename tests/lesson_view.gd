@@ -68,6 +68,22 @@ func _near(a: Vector2, b: Vector2) -> bool:
 	return a.distance_to(b) < 0.001
 
 
+# Lesson 4's bottom button reads 「チェックして！」 (disabled on a lit board too);
+# lessons 5 and 7 keep 「親方を呼ぶ」.
+func _test_call_labels() -> void:
+	for case in [[3, "チェックして！"], [4, "親方を呼ぶ"], [6, "親方を呼ぶ"]]:
+		var model := Tutorial.new()
+		model.stage_index = case[0]
+		model._reset_stage()
+		var drawn := _texts(_render(model, _anim()))
+		_expect(drawn.has(case[1]) and drawn.count("チェックして！") + drawn.count("親方を呼ぶ") == 1, "lesson %d's call button reads %s" % [case[0] + 1, case[1]])
+	var lit := Tutorial.new()
+	lit.stage_index = 3
+	lit._reset_stage()
+	lit.tap_node(1, 1)
+	_expect(not lit.can_call_foreman() and _texts(_render(lit, _anim())).has("チェックして！"), "lesson 4's disabled button keeps its label")
+
+
 # The legend's four sockets: red and blue bands of one size crossing exactly
 # at the centre, a faint grey guide on the same centre line for each missing
 # colour (no dots), chevrons of two equal joined arms centred between sockets.
@@ -655,7 +671,7 @@ func _test_counting(view) -> void:
 	_expect(view._sound_starts == sounds and view._success_age >= View.SETTLED, "the pass is not celebrated before the count")
 	var probe := _render(view.model, _anim(0.0, false, {"counting": 0.4, "state": view.model.semantic_state()}))
 	var drawn := _texts(probe)
-	_expect(drawn.has("数えるぞ。") and not drawn.has("漏電はないぞ。") and drawn.has("親方を呼ぶ") and not drawn.has("つづける"), "while counting only the counting line shows and Continue is not drawn")
+	_expect(drawn.has("数えるぞ。") and not drawn.has("漏電はないぞ。") and drawn.has("チェックして！") and not drawn.has("つづける"), "while counting only the counting line shows and Continue is not drawn")
 	view._handle_design_tap(View.PRIMARY_RECT.get_center())
 	_expect(view.model.stage_index == 3, "Continue cannot race the count")
 	view._process(0.9)
@@ -772,6 +788,7 @@ func _run() -> void:
 	_test_plates_are_hit_areas()
 	_test_latest_utterance_only()
 	_test_inspection_presentation()
+	_test_call_labels()
 	_test_legend_alignment()
 	_test_socket_wire_crossing()
 	_test_foreman_alignment()

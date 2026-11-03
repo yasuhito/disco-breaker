@@ -141,6 +141,7 @@ try {
 
   await captureState("stage4-start");
   await assertState("state.can_call_foreman && state.inspection_mode === 'call'", "stage4 allows calling the foreman before touching the grid");
+  await assertState("state.title === 'でも、安全かな？' && state.utterance.text === 'ちらつきは全部消えたね。\\nでも、電気がもれてるかも。\\n安全かどうかチェックしよう！' && document.getElementById('disco-breaker-live').textContent.endsWith('チェックして！ を押せる')", "stage4 opens with its approved copy and check button");
   await cycleGrid3x3("stage4");
   await box(1);
   await box(4, 3);

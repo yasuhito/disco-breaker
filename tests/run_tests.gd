@@ -339,6 +339,9 @@ func _test_latest_utterance() -> void:
 		_expect(three_taps.utterance().text == Tutorial.LIT_HINTS.combined_three_taps and not three_taps.passed(), "lesson 3 keeps its one-colour hint after tap %d" % (tap + 1))
 	three_taps.tap_node(1, 1)
 	_expect(three_taps.utterance() == {"kind": "safe", "text": "いいぞ！\n赤と青のちらつきが\nどちらも直ったね！"} and three_taps.passed(), "lesson 3's third tap passes with its approved praise")
+	var check := _at(3)
+	_expect(String(check.definition().title) == "でも、安全かな？" and check.utterance() == {"kind": "start", "text": "ちらつきは全部消えたね。\nでも、電気がもれてるかも。\n安全かどうかチェックしよう！"} and check.call_label() == "チェックして！", "lesson 4 opens with its approved title, instruction and check button")
+	_expect(_at(4).call_label() == "親方を呼ぶ" and _at(6).call_label() == "親方を呼ぶ", "lessons 5 and 7 keep 「親方を呼ぶ」")
 	var both := _at(2)
 	both.tap_node(1, 1)
 	_expect(both.utterance().text == Tutorial.LIT_HINTS.combined_three_taps, "one colour placed")
@@ -388,10 +391,10 @@ func _test_foreman_copy_fits_bubble() -> void:
 			for line in stage.lines.values():
 				copy.append(String(line))
 	# The bubble holds three 24 px lines in its 114-unit text column, also in bold.
-	# The human-approved third lines of lessons 1 and 2 are wider: they must
+	# The human-approved third lines of lessons 1, 2 and 4 are wider: they must
 	# still stay on the paper (bubble 256 px - 14 px text inset - 2 px ink
 	# outline = 240 px).
-	var approved_wide := ["赤い配線でちらつきを消そう！", "青い配線でちらつきを消そう！"]
+	var approved_wide := ["赤い配線でちらつきを消そう！", "青い配線でちらつきを消そう！", "安全かどうかチェックしよう！"]
 	for text in copy:
 		var lines := text.split("\n")
 		_expect(lines.size() <= 3, "utterance exceeds three lines: %s" % text)
@@ -411,6 +414,13 @@ func _test_foreman_copy_fits_bubble() -> void:
 			_expect(bold.get_string_size(String(stage.title), HORIZONTAL_ALIGNMENT_LEFT, -1, 30).x <= 358.0, "lesson title is wider than the screen: %s" % stage.title)
 			for character in String(stage.title):
 				_expect(regular.has_char(character.unicode_at(0)), "bundled font lacks title glyph: %s" % character)
+	# Each lesson's call button label (Bold 30 px, centred) keeps 16 px each
+	# side inside the 356 px bottom plate.
+	for stage in 7:
+		var label := _at(stage).call_label()
+		_expect(bold.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 30).x <= 356.0 - 32.0, "call button label is wider than its plate: %s" % label)
+		for character in label:
+			_expect(bold.has_char(character.unicode_at(0)), "bundled font lacks button glyph: %s" % character)
 	for path in ["res://src/tutorial_state.gd", "res://src/tutorial_view.gd", "res://src/lesson_artwork.gd", "res://src/title_artwork.gd"]:
 		for character in FileAccess.get_file_as_string(path):
 			if character.unicode_at(0) >= 0x3000:

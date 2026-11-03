@@ -203,7 +203,7 @@ func draw(target, model, anim: Dictionary) -> void:
 	elif can_continue:
 		_button(primary, "success", "normal", "つづける", true)
 	elif state.inspection_mode == "call":
-		_button(primary, "call", "normal" if state.can_call_foreman else "disabled", "親方を呼ぶ", true)
+		_button(primary, "call", "normal" if state.can_call_foreman else "disabled", model.call_label(), true)
 	else:
 		_button(primary, "success", "disabled", "つづける", true)
 

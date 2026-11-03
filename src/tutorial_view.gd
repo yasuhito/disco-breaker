@@ -525,7 +525,7 @@ func _spoken(state: Dictionary) -> String:
 func _announce(state: Dictionary) -> void:
 	var text := "タイトル画面" if at_title else "レッスン %d / %d。親方「%s」。%s" % [
 		state.stage, state.stage_count, _spoken(state).replace("\n", ""),
-		"もう一度 を押せる" if state.finished else ("つづける を押せる" if state.continue_enabled else ("親方を呼ぶ を押せる" if state.can_call_foreman else "つづける はまだ押せない"))]
+		"もう一度 を押せる" if state.finished else ("つづける を押せる" if state.continue_enabled else (model.call_label() + " を押せる" if state.can_call_foreman else "つづける はまだ押せない"))]
 	JavaScriptBridge.eval("(() => { let live = document.getElementById('disco-breaker-live'); if (!live) { live = document.createElement('div'); live.id = 'disco-breaker-live'; live.setAttribute('aria-live', 'polite'); live.setAttribute('role', 'status'); live.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap'; document.body.appendChild(live); } const text = %s; if (live.textContent !== text) live.textContent = text; })()" % JSON.stringify(text))
 
 
