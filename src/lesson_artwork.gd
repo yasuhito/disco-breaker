@@ -85,10 +85,10 @@ const LEAK_REVEAL_AT := 1.4
 const LEAK_DONE_AT := 2.0
 # Lesson 4's counting (the view's COUNT_TIME): red line, then blue line.
 const COUNT_LINE_TIME := 0.8
-# A darkening tap's outline and wire glow (the view's DARKEN_TIME): full for
-# the first part, then one smooth fade; reduced motion holds it unfaded.
-const DARKEN_HOLD := 0.15
-const DARKEN_FADE := 0.3
+# A wiring tap's floor outlines and wire glow (the view's CHANGE_TIME): full
+# for the first part, then one smooth fade; reduced motion holds it unfaded.
+const CHANGE_HOLD := 0.15
+const CHANGE_FADE := 0.3
 
 var view
 var _aa := 0.25
@@ -250,14 +250,25 @@ func _board(model, state: Dictionary, anim: Dictionary) -> void:
 				var brightness := Flicker.brightness(key, now, reduced)
 				level = "lit" if brightness >= 0.6 else ("dim" if brightness >= 0.2 else "drop")
 			_floor(face_rect(floor.face), floor.component, level)
-	var darkening: Dictionary = anim.get("darkening", {})
+	var change: Dictionary = anim.get("change", {})
 	var glow := 0.0
-	if not darkening.is_empty():
-		glow = 1.0 if reduced else clampf(1.0 - (float(darkening.age) - DARKEN_HOLD) / DARKEN_FADE, 0.0, 1.0)
-		for floor in darkening.floors:
+	if not change.is_empty():
+		glow = 1.0 if reduced else clampf(1.0 - (float(change.age) - CHANGE_HOLD) / CHANGE_FADE, 0.0, 1.0)
+		# Floors this tap turned dark: gold over the dark glass.
+		for floor in change.darkened:
 			var faces: Array = d.red_faces if int(floor.component) == 1 else d.blue_faces
-			_stroke(darkened_outline(faces[int(floor.check)]), Color(GOLD_HI, 0.35 * glow), 3.5)
-			_stroke(darkened_outline(faces[int(floor.check)]), Color(GOLD, glow), 1.5)
+			_stroke(floor_outline(faces[int(floor.check)]), Color(GOLD_HI, 0.35 * glow), 3.5)
+			_stroke(floor_outline(faces[int(floor.check)]), Color(GOLD, glow), 1.5)
+		# Floors it newly lit: a light line in their own colour with a white
+		# core on an ink casing (it must stand out on the lit stripes), never
+		# gold, so a new fault light does not read as a repair.
+		for floor in change.lit:
+			var f: Dictionary = FAMILY[int(floor.component)]
+			var faces: Array = d.red_faces if int(floor.component) == 1 else d.blue_faces
+			var outline := floor_outline(faces[int(floor.check)])
+			_stroke(outline, Color(INK, 0.85 * glow), 4.5)
+			_stroke(outline, Color(f.hi, glow), 2.5)
+			_stroke(outline, Color(WHITE, 0.8 * glow), 0.75)
 	var inspection: Dictionary = state.inspection
 	var inspected: bool = state.inspected
 	var leak: bool = inspected and not bool(inspection.safe)
@@ -298,8 +309,8 @@ func _board(model, state: Dictionary, anim: Dictionary) -> void:
 		var hidden := int(d.hidden.get(node, 0)) if reveal else 0
 		var pressed: bool = not reduced and node == int(anim.pressed_node) and float(anim.since_press) < 0.11
 		_socket(socket_center(node), int(state.corrections[node]), pressed, happy and node == target, hidden)
-		if glow > 0.0 and node == int(darkening.node):
-			for wire in darkening.wires:
+		if glow > 0.0 and node == int(change.node):
+			for wire in change.wires:
 				_wire_glow(socket_center(node) + Vector2(0, 1.0 if pressed else 0.0), int(wire.component), bool(wire.present), glow)
 	if leak and age >= 0.0:
 		_leftover_marks(families, residual)
@@ -433,12 +444,12 @@ func _wire(center: Vector2, component: int, dashed: bool) -> void:
 			_plate(tip.x - 2, tip.y - 2, 5, 5, 1, f.hi)
 
 
-# The closed outline (units) of a floor this tap turned dark, 3 units inside
-# its edge. A full floor's corners are cut at 45 degrees clear of its four
-# sockets, so the whole outline shows over the dark glass. A half (edge) floor
+# The closed outline (units) of a floor this tap turned dark or lit, 3 units
+# inside its edge. A full floor's corners are cut at 45 degrees clear of its
+# four sockets, so the whole outline shows over the glass. A half (edge) floor
 # is too narrow for that: like its glass, its socket-side corners pass under
 # the sockets and its long outer side shows.
-static func darkened_outline(face: Dictionary) -> PackedVector2Array:
+static func floor_outline(face: Dictionary) -> PackedVector2Array:
 	var rect := face_rect(face).grow(-3)
 	var cut := 15.0 if face.nodes.size() == 4 else 2.0
 	var loop := _oct_points(rect.position.x, rect.position.y, rect.size.x, rect.size.y, cut)

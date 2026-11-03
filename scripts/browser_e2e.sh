@@ -139,13 +139,13 @@ capture_state 05 stage2-start
 cycle_grid_3x3 stage2
 assert_state "${S}.corrections.every(value => value === 0)"
 click_canvas 194 396 stage2-cycle-red
-# Lighting floors marks nothing; the blue tap marks the four floors it darkened.
-assert_state "${F}.wiring.floors.length === 0"
+# The red tap marks the two red floors it lit; the blue tap the four it darkened.
+assert_state "${F}.wiring.darkened.length === 0 && ${F}.wiring.lit.map(f => f.component + ':' + f.check).join() === '1:0,1:1' && ${F}.wiring.wires.map(w => w.component + ':' + w.present).join() === '1:true'"
 assert_state "!${S}.floor_dark && ${S}.utterance.text === '赤い配線になったね。\\nもう1回タップして、\\n青い配線に変えよう！'"
 capture_state 06 stage2-intermediate-red
 click_canvas 194 396 stage2-cycle-blue
 assert_state "${S}.floor_dark && ${S}.passed"
-assert_state "${F}.wiring.floors.map(f => f.component + ':' + f.check).join() === '1:0,1:1,2:0,2:1' && ${F}.wiring.wires.map(w => w.component + ':' + w.present).join() === '1:false,2:true' && ${F}.wiring.node === 4"
+assert_state "${F}.wiring.lit.length === 0 && ${F}.wiring.darkened.map(f => f.component + ':' + f.check).join() === '1:0,1:1,2:0,2:1' && ${F}.wiring.wires.map(w => w.component + ':' + w.present).join() === '1:false,2:true' && ${F}.wiring.node === 4"
 capture_state 07 stage2-pass
 click_canvas 194 760 stage2-continue
 
