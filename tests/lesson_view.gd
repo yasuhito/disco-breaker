@@ -232,6 +232,19 @@ func _test_counting_lessons() -> void:
 	var edge_blue := _at_lesson(5, {2: Tutorial.BLUE}, false, 1)
 	var edge_blue_marks := _marks(edge_blue)
 	_expect(edge_blue.passed() and edge_blue_marks.plan.lines == [2] and edge_blue_marks.lines[2] and not edge_blue_marks.lines[1] and edge_blue_marks.badges == ["0"], "lesson 6 blue: the left column counts zero marks")
+	# The count badges stay clear of every ring, even a blue remainder ring on socket 0.
+	var corner := _at_lesson(6, {4: Tutorial.RED, 0: Tutorial.BLUE, 1: Tutorial.BLUE})
+	var corner_plan := Lesson.count_plan(corner, true)
+	_expect(corner_plan.remainder[2] == [0], "fixture: a blue remainder ring on socket 0")
+	var drawn := _render(corner, _anim(0.0, true, {"teach_level": 3}))
+	var plates := _shapes(drawn, Lesson.PAPER).filter(func(shape): var box := _bounds(shape); return is_equal_approx(box.size.x, 8.0 * Lesson.U) and is_equal_approx(box.size.y, 8.0 * Lesson.U))
+	var octagon := func(point: Vector2) -> bool:
+		var d := (point / Lesson.U - Lesson.socket_center(0)).abs()
+		return d.x <= 19.0 + 1.0 and d.y <= 19.0 + 1.0 and d.x + d.y <= 38.0 - 0.6 * 19.0 + 2.0
+	_expect(plates.size() == 2, "both count badges are drawn")
+	for plate in plates:
+		_expect(Array(plate).all(func(point): return not octagon.call(point)), "a count badge clears socket 0's rings")
+		_expect(_bounds(plate).end.y < Lesson.socket_center(0).y * Lesson.U - 1.0 or _bounds(plate).end.x < Lesson.socket_center(0).x * Lesson.U - 1.0 or _bounds(plate).position.x > Lesson.socket_center(0).x * Lesson.U + 1.0, "a count badge stays off the line through socket 0")
 	# Lesson 7 counts both colours on a leak.
 	var practice := _at_lesson(6, {1: Tutorial.RED, 2: Tutorial.BLUE, 7: Tutorial.RED})
 	var practice_marks := _marks(practice)

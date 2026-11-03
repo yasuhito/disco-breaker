@@ -626,8 +626,10 @@ func _count_marks(model, with_counts: bool) -> void:
 			ring.append(ring[0])
 			_stroke(ring, INK, 3.0)
 			_stroke(ring, f.hi, 2.0)
+		# Clear of the line, the rings (a blue ring on socket 0 reaches 19
+		# units) and the other badge.
 		if component == 1:
-			_badge(c0.x - 22, c0.y - 9, plan.counts[component], PAPER)
+			_badge(c0.x - 24, c0.y - 18, plan.counts[component], PAPER)
 		else:
 			_badge(c0.x + 9, c0.y - 26, plan.counts[component], PAPER)
 
