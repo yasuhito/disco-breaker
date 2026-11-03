@@ -590,6 +590,17 @@ func _test_darkening(view) -> void:
 	view._show_title()
 	view._open_tutorial()
 	_expect(not view._darkening(), "home and resume clear it")
+	# Lesson 4: calling the foreman right after a darkening tap (well within
+	# its 0.45 s) ends the darkening; the count and verdict take over.
+	reset.call(3)
+	for step in 4:
+		tap.call(4)
+	_expect(view._darkening() and view.model.can_call_foreman() and floors.call() == [[1, 0], [1, 1]], "lesson 4: the tap back to both darkens the red floors on a callable board")
+	view._process(0.1)
+	_expect(view._darkening(), "lesson 4: still showing 0.1 s later")
+	view._handle_design_tap(View.PRIMARY_RECT.get_center())
+	view._publish_semantics()
+	_expect(not view.model.inspection.is_empty() and not view._darkening() and view._darkening_age < View.DARKEN_TIME, "lesson 4: calling the foreman within 0.45 s ends the darkening")
 	reset.call(0)
 	tap.call(4)
 	view.model.restart()
