@@ -309,6 +309,9 @@ func _test_semantic_contract() -> void:
 func _test_latest_utterance() -> void:
 	var model := Tutorial.new()
 	_expect(model.utterance() == {"kind": "start", "text": "赤い床がちらついてるね。\n真ん中を1回タップして、\n赤い配線でちらつきを消そう！"}, "lesson opens with its approved instruction")
+	var blue := _at(1)
+	_expect(String(blue.definition().title) == "青いちらつきを直そう" and blue.utterance() == {"kind": "start", "text": "青い床がちらついてるね。\n真ん中を2回タップして、\n青い配線でちらつきを消そう！"}, "lesson 2 opens with its approved title and instruction")
+	_expect(String(blue.definition().lines.ok) == "いいぞ！\n青い床のちらつきが\n直ったね！", "lesson 2 praises with its approved line")
 	_expect(model.definition().title == "赤いちらつきを直そう", "lesson 1 has its approved title")
 	model.tap_node(0, 0)
 	_expect(model.utterance() == {"kind": "mistake", "text": Tutorial.LIT_GENERIC}, "a mistake replaces the instruction (no stale hint about the centre)")
@@ -319,7 +322,7 @@ func _test_latest_utterance() -> void:
 	model.tap_node(1, 1)
 	_expect(model.utterance() == {"kind": "safe", "text": "いいぞ！\n赤い床のちらつきが\n直ったね！"}, "a pass replaces the hint with the approved praise")
 	model.next_stage()
-	_expect(model.utterance().kind == "start" and model.utterance().text.begins_with("中央を2回"), "the next lesson replaces the praise")
+	_expect(model.utterance().kind == "start" and model.utterance().text.begins_with("青い床がちらついてるね。"), "the next lesson replaces the praise")
 	model.tap_node(1, 1)
 	_expect(model.utterance().text == Tutorial.LIT_HINTS.blue_two_taps, "the red-first hint follows the board")
 	model.tap_node(0, 0)
@@ -373,15 +376,16 @@ func _test_foreman_copy_fits_bubble() -> void:
 			for line in stage.lines.values():
 				copy.append(String(line))
 	# The bubble holds three 24 px lines in its 114-unit text column, also in bold.
-	# The human-approved first-lesson line is wider: it must still stay on the
-	# paper (bubble 256 px - 14 px text inset - 2 px ink outline = 240 px).
-	var approved_wide := "赤い配線でちらつきを消そう！"
+	# The human-approved third lines of lessons 1 and 2 are wider: they must
+	# still stay on the paper (bubble 256 px - 14 px text inset - 2 px ink
+	# outline = 240 px).
+	var approved_wide := ["赤い配線でちらつきを消そう！", "青い配線でちらつきを消そう！"]
 	for text in copy:
 		var lines := text.split("\n")
 		_expect(lines.size() <= 3, "utterance exceeds three lines: %s" % text)
 		for line in lines:
 			for font in [regular, bold]:
-				var limit := 240.0 if line == approved_wide else 228.0
+				var limit := 240.0 if line in approved_wide else 228.0
 				_expect(font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x <= limit, "utterance line is wider than the bubble: %s" % line)
 		for character in text:
 			if character != "\n":

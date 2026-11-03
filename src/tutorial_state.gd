@@ -67,9 +67,9 @@ func _build_stages() -> Array[Dictionary]:
 			"lines": {"open": "赤い床がちらついてるね。\n真ん中を1回タップして、\n赤い配線でちらつきを消そう！", "ok": "いいぞ！\n赤い床のちらつきが\n直ったね！"},
 		},
 		{
-			"id": "blue_two_taps", "title": "青い配線", "size": 3, "inspect": "auto",
+			"id": "blue_two_taps", "title": "青いちらつきを直そう", "size": 3, "inspect": "auto",
 			"hidden": {4: BLUE}, "preset": {}, "target": 4,
-			"lines": {"open": "中央を2回タップ。\n赤から青に変わるよ。", "ok": "いいぞ！ 青で直った。"},
+			"lines": {"open": "青い床がちらついてるね。\n真ん中を2回タップして、\n青い配線でちらつきを消そう！", "ok": "いいぞ！\n青い床のちらつきが\n直ったね！"},
 		},
 		{
 			"id": "combined_three_taps", "title": "赤と青を交差", "size": 3, "inspect": "auto",
