@@ -169,11 +169,12 @@ capture_state 12 stage4-start
 cycle_grid_3x3 stage4
 assert_state "${S}.can_call_foreman"
 click_canvas 194 304 stage4-leak-top-red
+assert_state "!${S}.can_call_foreman && document.getElementById('disco-breaker-live').textContent.endsWith('チェックして！ はまだ押せない')"
 click_canvas 194 396 stage4-leak-center-blue 3
 click_canvas 194 488 stage4-leak-bottom-red
 # The count lasts 1.6 s; check it in the same browser step as the call, as
 # separate commands can take longer than that on a loaded host.
-chrome-devtools-axi eval "async () => { const c=document.querySelector('canvas'); const r=c.getBoundingClientRect(); const e={bubbles:true,clientX:r.left+194,clientY:r.top+760,button:0}; c.dispatchEvent(new MouseEvent('mousedown',e)); c.dispatchEvent(new MouseEvent('mouseup',e)); await new Promise(resolve => setTimeout(resolve,200)); const s=window.discoBreakerState; if (!(s.floor_dark && !s.inspection.safe && !s.can_continue && !s.can_call_foreman && s.counting)) throw new Error('the foreman must count before his unsafe verdict'); return true; }" >/dev/null
+chrome-devtools-axi eval "async () => { const c=document.querySelector('canvas'); const r=c.getBoundingClientRect(); const e={bubbles:true,clientX:r.left+194,clientY:r.top+760,button:0}; c.dispatchEvent(new MouseEvent('mousedown',e)); c.dispatchEvent(new MouseEvent('mouseup',e)); await new Promise(resolve => setTimeout(resolve,200)); const s=window.discoBreakerState; if (!(s.floor_dark && !s.inspection.safe && !s.can_continue && !s.can_call_foreman && s.counting && document.getElementById('disco-breaker-live').textContent.endsWith('チェックして！ はまだ押せない'))) throw new Error('the foreman must count before his unsafe verdict'); return true; }" >/dev/null
 record_action stage4-call-unsafe
 capture_state 13 stage4-failed-inspection 4.0
 click_canvas 194 304 stage4-undo-top 3
@@ -231,7 +232,7 @@ click_canvas 194 760 stage6-continue
 
 capture_state 25 stage7-start
 click_canvas 194 760 stage7-disabled-call
-assert_state "!${S}.can_call_foreman && ${S}.last_action.action === 'next_stage'"
+assert_state "!${S}.can_call_foreman && ${S}.last_action.action === 'next_stage' && document.getElementById('disco-breaker-live').textContent.endsWith('親方を呼ぶ はまだ押せない')"
 cycle_grid_3x3 stage7
 assert_state "${S}.grid_size === 3 && ${S}.corrections.every(value => value === 0)"
 capture_state 26 two-red-flickers-before

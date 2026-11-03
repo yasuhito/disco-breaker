@@ -68,6 +68,69 @@ func _near(a: Vector2, b: Vector2) -> bool:
 	return a.distance_to(b) < 0.001
 
 
+# The live region names the bottom button as drawn: its label (the lesson's
+# call label in call mode) and whether it can be pressed (a disabled button
+# is drawn in MIST).
+func _test_button_announcement(view) -> void:
+	view.reduced_motion = false
+	view._muted = true
+	var reset := func(stage: int, phase := 0) -> void:
+		view.model.stage_index = stage
+		view.model.boundary_phase = phase
+		view.model.finished = false
+		view.model._reset_stage()
+		view.model._record("next_stage", {})
+		view._navigation_guard_until = 0
+		view._publish_semantics()
+	var tap := func(node: int) -> void:
+		view._handle_design_tap(Lesson.socket_center(node) * 2.0)
+		view._publish_semantics()
+	var call := func() -> void:
+		view._handle_design_tap(View.PRIMARY_RECT.get_center())
+		view._publish_semantics()
+	var seen := {}
+	var check := func(name: String, expected: String) -> void:
+		var state: Dictionary = view.semantic_state()
+		var said: String = view._button_announcement(state)
+		_expect(said == expected, "%s: announces 「%s」, not 「%s」" % [name, expected, said])
+		var label := said.trim_suffix(" を押せる").trim_suffix(" はまだ押せない")
+		var probe := _render(view.model, _anim(view._elapsed, false, {"state": view.model.semantic_state(), "counting": view._count_age if view._counting() else -1.0}))
+		var drawn: Array = probe.texts.filter(func(entry): return entry.text == label)
+		_expect(drawn.size() == 1 and (drawn[0].color == Lesson.MIST) == said.ends_with(" はまだ押せない"), "%s: the drawn button is 「%s」 and %s" % [name, label, "disabled" if said.ends_with(" はまだ押せない") else "enabled"])
+		seen[said] = true
+	reset.call(3)
+	check.call("lesson 4 start", "チェックして！ を押せる")
+	tap.call(4)
+	check.call("lesson 4 lit", "チェックして！ はまだ押せない")
+	for step in 3:
+		tap.call(4)
+	check.call("lesson 4 dark", "チェックして！ を押せる")
+	call.call()
+	check.call("lesson 4 counting", "チェックして！ はまだ押せない")
+	view._process(View.COUNT_TIME)
+	view._publish_semantics()
+	check.call("lesson 4 passed", "つづける を押せる")
+	reset.call(4)
+	check.call("lesson 5 start", "親方を呼ぶ を押せる")
+	call.call()
+	check.call("lesson 5 leak", "親方を呼ぶ はまだ押せない")
+	tap.call(0)
+	check.call("lesson 5 lit", "親方を呼ぶ はまだ押せない")
+	reset.call(6)
+	check.call("lesson 7 start", "親方を呼ぶ はまだ押せない")
+	reset.call(0)
+	check.call("lesson 1 start", "つづける はまだ押せない")
+	tap.call(4)
+	check.call("lesson 1 passed", "つづける を押せる")
+	reset.call(5, 1)
+	check.call("lesson 6 blue start", "つづける はまだ押せない")
+	reset.call(6)
+	view.model.skip_graduation()
+	view._publish_semantics()
+	check.call("finished", "もう一度 を押せる")
+	_expect(seen.size() == 7, "every announcement form is covered")
+
+
 # Lesson 4's bottom button reads 「チェックして！」 (disabled on a lit board too);
 # lessons 5 and 7 keep 「親方を呼ぶ」.
 func _test_call_labels() -> void:
@@ -859,6 +922,7 @@ func _run() -> void:
 	_test_wiring_change(view)
 	_test_counting(view)
 	_test_lesson1_bell(view)
+	_test_button_announcement(view)
 	# The audio server drops stopped playbacks (and their streams) on its own
 	# mixing thread. After this long synchronous run the next frames advance
 	# game time faster than real time, so a fixed timer could end first and

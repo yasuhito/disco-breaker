@@ -144,10 +144,11 @@ try {
   await assertState("state.title === 'でも、安全かな？' && state.utterance.text === 'ちらつきは全部消えたね。\\nでも、電気がもれてるかも。\\n安全かどうかチェックしよう！' && document.getElementById('disco-breaker-live').textContent.endsWith('チェックして！ を押せる')", "stage4 opens with its approved copy and check button");
   await cycleGrid3x3("stage4");
   await box(1);
+  await assertState("!state.can_call_foreman && document.getElementById('disco-breaker-live').textContent.endsWith('チェックして！ はまだ押せない')", "a lit stage4 board announces its disabled check button");
   await box(4, 3);
   await box(7);
   await bottom();
-  await assertState("state.floor_dark && !state.inspection.safe && !state.can_continue && state.counting", "dark floor may fail inspection; the foreman counts first");
+  await assertState("state.floor_dark && !state.inspection.safe && !state.can_continue && state.counting && document.getElementById('disco-breaker-live').textContent.endsWith('チェックして！ はまだ押せない')", "dark floor may fail inspection; the foreman counts first");
   await captureState("stage4-failed-inspection", 4000);
   await box(1, 3);
   await assertState("!state.inspected && state.stage === 4", "an edit clears the verdict and keeps the floor editable");
@@ -187,7 +188,7 @@ try {
   const leak = await page.evaluate(() => window.discoBreakerFeedback);
   if (!leak.leak_active || leak.leak_events !== 3 || leak.leak_sound_starts !== 3 || JSON.stringify(leak.leak_routes[0].qubits) !== '[1,4,7]' || leak.revealed_hidden['4'] !== 1) throw new Error(`trap must reveal the original center X and its real residual route once: ${JSON.stringify(leak)}`);
   const live = await page.evaluate(() => document.getElementById("disco-breaker-live")?.textContent ?? "");
-  if (!live.includes("漏電あり！床は2本で暗い。") || !live.includes("つづける はまだ押せない")) throw new Error(`the live region must announce the latest line and the button: ${live}`);
+  if (!live.includes("漏電あり！床は2本で暗い。") || !live.endsWith("親方を呼ぶ はまだ押せない")) throw new Error(`the live region must announce the latest line and the button: ${live}`);
   await captureState("stage5-leak-explained", 2300);
   await bottom();
   await assertState("state.stage === 5 && state.last_action.action === 'inspect'", "Continue stays disabled after the leak");
@@ -220,7 +221,7 @@ try {
   await bottom();
   await captureState("stage7-start");
   await bottom();
-  await assertState("!state.can_call_foreman && state.last_action.action === 'next_stage'", "stage7 foreman call stays disabled before the grid is wired");
+  await assertState("!state.can_call_foreman && state.last_action.action === 'next_stage' && document.getElementById('disco-breaker-live').textContent.endsWith('親方を呼ぶ はまだ押せない')", "stage7 foreman call stays disabled before the grid is wired");
   await cycleGrid3x3("stage7");
   await assertState("state.grid_size === 3 && state.corrections.every(value => value === 0)", "final practice is a neutral 3x3 floor");
   await captureState("two-red-flickers-before");
