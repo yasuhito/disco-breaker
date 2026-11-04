@@ -262,6 +262,7 @@ func semantic_state() -> Dictionary:
 	state["counting"] = _counting()
 	state["continue_enabled"] = model.can_continue() and not state.counting
 	state["check_detail"] = _detailing()
+	state["detail_offered"] = _detail_offered()
 	# The detailed check's result once its windows show it (else empty).
 	state["check_detail_result"] = model.detail_result() if state.check_detail and _detail_settled() else ""
 	return state
@@ -271,6 +272,12 @@ func semantic_state() -> Dictionary:
 # inspected board, once the foreman has checked).
 func _detail_available() -> bool:
 	return not at_title and model.counts_pairs() and not model.inspection.is_empty() and model.is_dark() and not _counting()
+
+
+# The bottom button offers it (「くわしく見る」) on a leak, where Continue
+# cannot be pressed anyway; a safe result keeps 「つづける」, never gated.
+func _detail_offered() -> bool:
+	return _detail_available() and not model.can_continue()
 
 
 # It belongs to the board it was opened on; any later action ends it.
@@ -293,13 +300,6 @@ func _handle_design_tap(point: Vector2) -> void:
 	if HOME_RECT.has_point(point):
 		_show_title()
 		return
-	# The bubble on a check's result opens (or replays) the detailed check.
-	if _detail_available() and Lesson.px(Lesson.BUBBLE).has_point(point):
-		_detail_sequence = model.trace.size()
-		_detail_age = DETAIL_TIME if reduced_motion else 0.0
-		_publish_semantics()
-		queue_redraw()
-		return
 	if model.finished:
 		if PRIMARY_RECT.has_point(point):
 			_replay()
@@ -314,6 +314,11 @@ func _handle_design_tap(point: Vector2) -> void:
 		elif model.can_continue():
 			if not _counting():
 				model.next_stage()
+		elif _detail_offered():
+			# Opens (or replays) the detailed check; no game state changes.
+			_detail_sequence = model.trace.size()
+			_detail_age = DETAIL_TIME if reduced_motion else 0.0
+			_publish_semantics()
 		elif model.can_call_foreman():
 			model.inspect_floor()
 		queue_redraw()
@@ -482,7 +487,7 @@ func _draw() -> void:
 		"counting": _count_age if _counting() else -1.0,
 		"spoken": _spoken(semantic_state()), "detail": _detail_age if _detailing() else -1.0,
 		"demo_node": model.demo_node(), "demo_age": _demo_age,
-		"detail_offered": _detail_available() and not _detailing(),
+		"detail_button": _detail_offered(),
 		"change": {"node": _change_node, "darkened": _darkened, "lit": _lit, "wires": _changed_wires, "age": _change_age} if _showing_change() else {},
 	})
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -604,12 +609,9 @@ func _announce(state: Dictionary) -> void:
 
 func _announcement(state: Dictionary) -> String:
 	var said := _readable(_spoken(state))
-	# The detailed check keeps the check's actual result first; an offered
-	# detail is announced as optional.
+	# The detailed check keeps the check's actual result first.
 	if state.get("check_detail", false):
 		said = _readable(String(state.utterance.text)) + "くわしく：" + said
-	elif _detail_available():
-		said += "吹き出しをタップすると、くわしく見られるよ。"
 	return "タイトル画面" if at_title else "レッスン %d / %d。親方「%s」。%s" % [
 		state.stage, state.stage_count, said, _button_announcement(state)]
 
@@ -634,6 +636,8 @@ func _button_announcement(state: Dictionary) -> String:
 		return "もう一度 を押せる"
 	if state.continue_enabled:
 		return "つづける を押せる"
+	if state.get("detail_offered", false):
+		return "くわしく見る を押せる"
 	if state.inspection_mode == "call":
 		return model.call_label() + (" を押せる" if state.can_call_foreman or state.get("demo_next", false) else " はまだ押せない")
 	return "つづける はまだ押せない"

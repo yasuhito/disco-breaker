@@ -203,7 +203,7 @@ func _check_board(model: Tutorial, age := 10.0, reduced := false, extra := {}) -
 	var dimmed := _shapes(probe, Color(Lesson.INK, 0.35)).size() > 0
 	return {"probe": probe, "texts": _texts(probe), "lamps": lamps, "routes": routes, "rings": rings, "trails": trails, "dimmed": dimmed,
 		"check": _shapes(probe, Lesson.MINT).filter(func(shape): return is_equal_approx(_bounds(shape).size.x, 14.0 * Lesson.U)).size() > 0,
-		"legend": _shapes(probe, Lesson.GROUT).filter(func(shape): return _bounds(shape).position.y > (Lesson.LEGEND_Y - 8) * Lesson.U).size() > 0}
+		"legend": _legend_shapes(probe).size() > 0}
 
 
 # Lessons 5-7, a check's result: on a leak, the leaving colour's remaining
@@ -214,7 +214,7 @@ func _check_board(model: Tutorial, age := 10.0, reduced := false, extra := {}) -
 func _test_visual_check() -> void:
 	var start := _at_lesson(4, {}, false)
 	var before := _check_board(start)
-	_expect(before.routes.is_empty() and before.rings[1].is_empty() and not before.check and before.legend, "lesson 5 before a check: nothing shown, the legend in place")
+	_expect(before.routes.is_empty() and before.rings[1].is_empty() and not before.check and not before.legend, "lesson 5 before a check: nothing shown, no legend")
 	var trap := _at_lesson(4)
 	var route: Dictionary = _routes(trap)[0]
 	_expect(Lesson.leaving_sockets(trap, route) == [1, 4, 7], "the trap's leaving sockets are its red leftovers 1, 4, 7, in route order")
@@ -349,10 +349,12 @@ func _sorted(values: Array) -> Array:
 	return copy
 
 
-# The detailed check in the view: offered only on a dark board's result once
-# the foreman has checked, opened and replayed by a bubble tap, spoken in its
-# own words, ended by any later action, settled by home, final at once in
-# reduced motion; the verdict and speech of the result stay as they are.
+# The detailed check in the view: offered by the bottom button
+# (「くわしく見る」) only on a leak's result once the foreman has checked, where
+# Continue cannot be pressed anyway; opened and replayed by that button, never
+# by the bubble; spoken in its own words, ended by any later action, settled
+# by home, final at once in reduced motion. A safe result keeps 「つづける」:
+# the detail never gates progress.
 func _test_check_detail(view) -> void:
 	var reset := func() -> void:
 		view.model.stage_index = 4
@@ -363,33 +365,39 @@ func _test_check_detail(view) -> void:
 		view.model._record("next_stage", {})
 		view._navigation_guard_until = 0
 		view._publish_semantics()
-	var call := func() -> void:
+	var press := func() -> void:
 		view._handle_design_tap(View.PRIMARY_RECT.get_center())
 		view._publish_semantics()
 	var bubble := Lesson.px(Lesson.BUBBLE).get_center()
 	var spoken := func() -> String:
 		return view._spoken(view.semantic_state())
+	var drawn := func() -> Array:
+		var probe := _render(view.model, _anim(0.0, false, {"state": view.semantic_state(), "detail_button": view._detail_offered(), "detail": view._detail_age if view._detailing() else -1.0}))
+		return probe.texts.filter(func(entry): return entry.text in ["くわしく見る", "チェックして！", "つづける", "？"]).map(func(entry): return [entry.text, entry.color != Lesson.MIST])
 	view.reduced_motion = false
 	view._muted = true
 	reset.call()
-	_expect(not view._detail_available(), "nothing to detail before a check")
+	_expect(not view._detail_available() and not view._detail_offered(), "nothing to detail before a check")
 	var untouched: int = view.model.trace.size()
 	view._handle_design_tap(bubble)
 	_expect(not view.semantic_state().check_detail and view.model.trace.size() == untouched, "a bubble tap before a check does nothing")
-	call.call()
-	_expect(view.semantic_state().counting and not view._detail_available(), "not while the foreman checks")
+	press.call()
+	_expect(view.semantic_state().counting and not view._detail_offered(), "not while the foreman checks")
 	view._process(View.COUNT_TIME + 0.05)
 	view._publish_semantics()
-	_expect(spoken.call() == "暗いのに、赤い電気が\n外へ抜けているよ！\n暗いだけでは足りないね。" and view._detail_available(), "the leak is spoken, and the detail is offered")
-	_expect(view._announcement(view.semantic_state()).contains("外へ抜けているよ！暗いだけでは足りないね。吹き出しをタップすると、くわしく見られるよ。"), "the optional detail is announced as optional")
+	_expect(spoken.call() == "暗いのに、赤い電気が\n外へ抜けているよ！\n暗いだけでは足りないね。" and view._detail_offered() and view.semantic_state().detail_offered, "the leak is spoken, and the bottom button offers the detail")
+	_expect(drawn.call() == [["くわしく見る", true]], "the bottom button reads an enabled 「くわしく見る」; no 「？」 on the bubble")
+	_expect(view._announcement(view.semantic_state()).ends_with("外へ抜けているよ！暗いだけでは足りないね。」。くわしく見る を押せる") and not view._announcement(view.semantic_state()).contains("吹き出し"), "the announcement names the button, not the bubble")
 	_expect(view._leak_routes.size() == 1 and int(view._leak_routes[0].component) == 1 and view._leak_routes[0].qubits == [1, 4, 7], "the view's leaving route is the red chain 1-4-7")
 	var trace_size: int = view.model.trace.size()
 	view._handle_design_tap(bubble)
-	_expect(view.semantic_state().check_detail and spoken.call() == Tutorial.CHECK_DETAIL and view._detail_age == 0.0, "a bubble tap opens the detailed check with its words")
-	_expect(view.model.trace.size() == trace_size and view.model.utterance().kind == "unsafe", "it changes no game state")
+	_expect(not view.semantic_state().check_detail, "a bubble tap does not open it")
+	press.call()
+	_expect(view.semantic_state().check_detail and spoken.call() == Tutorial.CHECK_DETAIL and view._detail_age == 0.0, "the button opens the detailed check with its words")
+	_expect(view.model.trace.size() == trace_size and view.model.utterance().kind == "unsafe" and not view.model.can_continue(), "it changes no game state")
 	view._process(1.0)
-	view._handle_design_tap(bubble)
-	_expect(view._detail_age == 0.0, "another tap replays it")
+	press.call()
+	_expect(view._detail_age == 0.0 and drawn.call() == [["くわしく見る", true]], "another press replays it")
 	# The words: the rule, then the actual result once the windows show it;
 	# the announcement keeps the check's verdict first.
 	_expect(view.semantic_state().check_detail_result.is_empty() and spoken.call() == Tutorial.CHECK_DETAIL, "before the windows settle only the rule")
@@ -404,46 +412,45 @@ func _test_check_detail(view) -> void:
 	_expect(view.semantic_state().check_detail and view._detail_age >= View.DETAIL_TIME, "home settles it")
 	view._handle_design_tap(Lesson.socket_center(0) * 2.0)
 	view._publish_semantics()
-	_expect(not view.semantic_state().check_detail and view.model.utterance().kind == "mistake", "an edit ends it")
+	_expect(not view.semantic_state().check_detail and not view._detail_offered() and view.model.utterance().kind == "mistake", "an edit ends it and the offer")
+	_expect(drawn.call() == [["チェックして！", false]], "then the button is the (disabled) check again")
 	for tap in 3:
 		view._handle_design_tap(Lesson.socket_center(0) * 2.0)
 	view._publish_semantics()
-	call.call()
+	press.call()
 	view._process(View.COUNT_TIME + 0.05)
 	view._publish_semantics()
-	_expect(not view.semantic_state().check_detail, "a new check does not reopen it")
+	_expect(not view.semantic_state().check_detail and view._detail_offered(), "a new check offers it again but does not open it")
 	# Reduced motion: no check delay, the detail opens at its final frame.
 	view.reduced_motion = true
 	reset.call()
-	call.call()
-	view._handle_design_tap(bubble)
+	press.call()
+	press.call()
 	_expect(view.semantic_state().check_detail and view._detail_age >= View.DETAIL_TIME, "reduced motion shows the detail's final frame")
 	view.reduced_motion = false
-	# A safe check offers it too (a pair vanishing is how the safe board looks).
+	# A safe check keeps 「つづける」: the detail is not offered and never gates.
 	reset.call()
 	_wire(view.model, {1: Tutorial.RED, 2: Tutorial.RED, 5: Tutorial.RED, 7: Tutorial.EMPTY})
 	view._publish_semantics()
-	call.call()
+	press.call()
 	view._process(View.COUNT_TIME + 0.05)
 	view._publish_semantics()
-	_expect(view.model.passed() and spoken.call() == "よし、もう外へ抜けないね。\nこれで安心！" and view._detail_available(), "a safe check speaks its plain words and offers the detail")
+	_expect(view.model.passed() and spoken.call() == "よし、もう外へ抜けないね。\nこれで安心！" and not view._detail_offered() and drawn.call() == [["つづける", true]], "a safe check speaks its plain words and the button continues")
+	_expect(view._announcement(view.semantic_state()).ends_with("これで安心！」。つづける を押せる"), "and says so")
 	_expect(view._leak_routes.is_empty() and not view._leaks.active, "the view builds no leaving route for a safe board")
+	view._handle_design_tap(bubble)
+	_expect(not view.semantic_state().check_detail and view.semantic_state().continue_enabled, "a bubble tap does nothing on a pass")
 	# Two red columns (0-3-6 and 1-4-7): a chain runs from edge to edge, but it
 	# crosses the top row twice, so the board is safe and nothing leaves.
 	reset.call()
 	_wire(view.model, {0: Tutorial.RED, 3: Tutorial.RED, 6: Tutorial.RED})
 	view._publish_semantics()
-	call.call()
+	press.call()
 	view._process(View.COUNT_TIME + 0.05)
 	view._publish_semantics()
 	var chain := preload("res://src/leak_feedback.gd").route(view.model.definition().red_faces, view.model._residual_support(1), 3, true)
 	_expect(not chain.is_empty() and view.model.cut_marks(1).size() == 2, "fixture: an edge-to-edge red chain, two marks on the top row")
-	_expect(view.model.passed() and view._leak_routes.is_empty(), "a chain that crosses the top row twice is safe: no leaving light")
-	view._handle_design_tap(bubble)
-	_expect(spoken.call() == Tutorial.CHECK_DETAIL and view.semantic_state().continue_enabled, "the detail never blocks Continue")
-	_frames(view, View.DETAIL_TIME)
-	view._publish_semantics()
-	_expect(spoken.call().ends_with("全部、組で消えたね！") and view._announcement(view.semantic_state()).begins_with("レッスン 5 / 7。親方「よし、もう外へ抜けないね。これで安心！くわしく："), "a safe board's detail ends all gone and is announced after its pass")
+	_expect(view.model.passed() and view._leak_routes.is_empty() and view.semantic_state().continue_enabled, "a chain that crosses the top row twice is safe: no leaving light, Continue")
 	# Lesson 7: red leaves (column 1-4-7) while blue's two rows form an
 	# edge-to-edge chain that crosses the left column twice: only red leaves.
 	view.model.stage_index = 6
@@ -453,7 +460,7 @@ func _test_check_detail(view) -> void:
 	view._publish_semantics()
 	_wire(view.model, {0: Tutorial.BLUE, 1: Tutorial.BOTH, 3: Tutorial.BLUE, 4: Tutorial.BLUE, 5: Tutorial.BLUE, 7: Tutorial.RED})
 	view._publish_semantics()
-	call.call()
+	press.call()
 	view._publish_semantics()
 	var blue_chain := preload("res://src/leak_feedback.gd").route(view.model.definition().blue_faces, view.model._residual_support(2), 3, false)
 	_expect(view.model.is_dark() and view.model.inspection.red_crossing and not view.model.inspection.blue_crossing and not blue_chain.is_empty(), "fixture: red leaks, blue has an edge-to-edge chain but is safe")
@@ -492,7 +499,7 @@ func _test_demonstration(view) -> void:
 	view._handle_design_tap(bubble)
 	_expect(Array(view.model.corrections) == [0, 0, 0, 0, 0, 0, 0, 0, 0] and view.model.demo_step == 0, "a bubble tap does not move the experiment on")
 	view._handle_design_tap(button)
-	_expect(Array(view.model.corrections) == [0, 1, 0, 0, 0, 0, 0, 0, 0] and view._spoken(view.semantic_state()) == "上に赤を置いたよ。", "the button places the top red")
+	_expect(Array(view.model.corrections) == [0, 1, 0, 0, 0, 0, 0, 0, 0] and view._spoken(view.semantic_state()) == "上に赤を置いたよ。\n赤い配線は、となりの\n赤い床につながるよ。", "the button places the top red")
 	_expect(view._showing_change() and view._darkened.size() == 1 and int(view._darkened[0].check) == 0 and view._change_node == 1, "the floor it darkens (red floor 0) is shown like a tap on socket 1")
 	var placed := _render(view.model, _anim(0.0, false, frame.call()))
 	var hand := _shapes(placed, Lesson.SKIN).filter(func(shape): return _bounds(shape).get_center().distance_to(Lesson.socket_center(1) * Lesson.U) < 30.0 * Lesson.U)
@@ -550,54 +557,33 @@ func _test_call_labels() -> void:
 	_expect(not lit.can_call_foreman() and _texts(_render(lit, _anim())).has("チェックして！"), "lesson 4's disabled button keeps its label")
 
 
-# The legend's four sockets: red and blue bands of one size crossing exactly
-# at the centre, a faint grey guide on the same centre line for each missing
-# colour (no dots), chevrons of two equal joined arms centred between sockets.
-func _test_legend_alignment() -> void:
-	var probe := Probe.new()
-	var art := Lesson.new()
-	art.view = probe
-	art._legend(Lesson.LEGEND_Y)
-	var grooves := _shapes(probe, Lesson.GROUT)
-	var reds := _shapes(probe, Lesson.RED)
-	var blues := _shapes(probe, Lesson.BLUE)
-	var guides := _shapes(probe, Lesson.GUIDE)
-	var arms := _shapes(probe, Lesson.MIST)
-	_expect(grooves.size() == 4 and reds.size() == 2 and blues.size() == 2 and guides.size() == 4 and arms.size() == 6, "the legend draws four sockets, two red, two blue, four grey guides and three chevrons")
-	if grooves.size() != 4 or reds.size() != 2 or blues.size() != 2 or guides.size() != 4 or arms.size() != 6:
-		return
-	var centres: Array[Vector2] = []
-	for groove in grooves:
-		centres.append(_bounds(groove).get_center())
-		_expect(is_equal_approx(centres[-1].y, (Lesson.LEGEND_Y + 0.5) * Lesson.U), "each legend socket is centred on the legend line")
-	# Guides in drawing order: empty red, empty blue, blue on the red socket, red on the blue socket.
-	for guide in [[guides[0], 0, reds[0], true], [guides[1], 0, blues[0], false], [guides[2], 1, blues[0], false], [guides[3], 2, reds[0], true]]:
-		var points: PackedVector2Array = guide[0]
-		var wire := _bounds(guide[2])
-		_expect(_near(_mean(points), centres[guide[1]]), "each legend guide is centred on its socket")
-		_expect(is_equal_approx(_bounds(points).position.y, wire.position.y) and is_equal_approx(_bounds(points).end.y, wire.end.y) and (points[2].x > points[0].x) == guide[3], "each legend guide runs along its colour's band, end to end")
-		_expect(_bounds(points).size.x < wire.size.x, "a guide is thinner than its wire")
-	# Each coloured band lies over the grey guide it crosses.
-	var order := {}
-	for index in probe.log.size():
-		var entry: Array = probe.log[index]
-		if entry[0] == "polygon" and entry[2] in [Lesson.GUIDE, Lesson.RED, Lesson.BLUE]:
-			var icon := 0
-			for c in 4:
-				if _mean(entry[1]).distance_to(centres[c]) < _mean(entry[1]).distance_to(centres[icon]):
-					icon = c
-			order[icon] = order.get(icon, []) + [entry[2] == Lesson.GUIDE]
-	for icon in [1, 2]:
-		_expect(order.get(icon, []) == [true, false], "legend socket %d draws its guide under its coloured band" % icon)
-	for band in [[reds[0], 1], [blues[0], 2], [reds[1], 3], [blues[1], 3]]:
-		_expect(_near(_mean(band[0]), centres[band[1]]), "each legend wire band is centred on its socket (both cross at the centre)")
-	_expect(_bounds(reds[1]).size.is_equal_approx(_bounds(blues[1]).size), "red and blue legend bands are the same size")
-	for gap in 3:
-		var upper: PackedVector2Array = arms[gap * 2]
-		var lower: PackedVector2Array = arms[gap * 2 + 1]
-		_expect(_near(upper[3], lower[0]) and _near(upper[2], lower[1]), "each chevron's arms join on one edge")
-		_expect(is_equal_approx(_bounds(upper).size.y, _bounds(lower).size.y), "each chevron's arms are equally long")
-		_expect(_near(_union([upper, lower]).get_center(), (centres[gap] + centres[gap + 1]) * 0.5), "each chevron is centred between its sockets")
+# The old wire legend's band below the board (units): the four mini sockets
+# and their chevrons sat in it.
+const LEGEND_BAND := Rect2(50, 286, 95, 20)
+
+
+func _legend_shapes(probe: Probe) -> Array:
+	var result := []
+	for color in [Lesson.GROUT, Lesson.NIGHT4, Lesson.MIST, Lesson.GUIDE, Lesson.RED, Lesson.BLUE]:
+		for shape in _shapes(probe, color):
+			if Lesson.px(LEGEND_BAND).encloses(_bounds(shape)):
+				result.append(shape)
+	return result
+
+
+# No lesson draws the four-state legend (its fixed slashes read as a rule):
+# nothing in its band, before or after taps, and the announcement never
+# mentions one; the bottom button's plate stays where it was.
+func _test_no_legend() -> void:
+	for stage in Tutorial.new().stages().size():
+		var model := Tutorial.new()
+		model.stage_index = stage
+		model._reset_stage()
+		_expect(_legend_shapes(_render(model, _anim())).is_empty(), "lesson %d starts without a legend" % (stage + 1))
+		for node in [0, 4, 8]:
+			model.tap_node(int(node / 3.0), node % 3)
+		_expect(_legend_shapes(_render(model, _anim())).is_empty(), "lesson %d after taps: still no legend" % (stage + 1))
+	_expect(Lesson.PRIMARY == Rect2(8, 364, 178, 32) and Lesson.SECONDARY == Rect2(37, 321, 120, 26), "the bottom button and the secondary plate keep their places")
 
 
 # On the board, a socket's red and blue bands cross at its centre too, and
@@ -1366,7 +1352,7 @@ func _run() -> void:
 	_test_leak_without_counting()
 	_test_visual_check()
 	_test_check_detail_plan()
-	_test_legend_alignment()
+	_test_no_legend()
 	_test_socket_wire_crossing()
 	_test_wire_orientation()
 	_test_foreman_alignment()

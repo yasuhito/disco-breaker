@@ -212,8 +212,9 @@ wait_for_check_end
 assert_state "document.getElementById('disco-breaker-live').textContent.includes('暗いのに、赤い電気が外へ抜けているよ！暗いだけでは足りないね。') && !document.getElementById('disco-breaker-live').textContent.includes('漏電') && window.discoBreakerFeedback.leak_routes.length === 1"
 capture_state 16 stage5-leak-explained 2.3
 chrome-devtools-axi screenshot artifacts/tutorial-crossing-trap.png >/dev/null
-click_canvas 194 760 stage5-no-continue-after-leak
-assert_state "${S}.stage === 5 && ${S}.last_action.action === 'inspect'"
+assert_state "${S}.detail_offered && document.getElementById('disco-breaker-live').textContent.endsWith('くわしく見る を押せる') && !document.getElementById('disco-breaker-live').textContent.includes('吹き出し')"
+click_canvas 194 760 stage5-detail-after-leak
+assert_state "${S}.stage === 5 && ${S}.last_action.action === 'inspect' && ${S}.check_detail && !${S}.can_continue"
 click_canvas 194 304 stage5-repair-top 3
 assert_state "!${S}.floor_dark && !${S}.fault_revealed && !${S}.check_detail && ${S}.utterance.text === '光る床がある。\\nまず全部暗くしよう。'"
 capture_state 17 stage5-repair-lit
@@ -224,7 +225,7 @@ capture_state 18 stage5-repair-dark
 click_canvas 194 760 stage5-call-repaired
 assert_state "${S}.passed && ${S}.can_continue"
 wait_for_check_end
-assert_state "${S}.continue_enabled && ${S}.utterance.text === 'よし、もう外へ抜けないね。\\nこれで安心！'"
+assert_state "${S}.continue_enabled && !${S}.detail_offered && ${S}.utterance.text === 'よし、もう外へ抜けないね。\\nこれで安心！'"
 capture_state 19 stage5-pass
 click_canvas 194 760 stage5-continue
 

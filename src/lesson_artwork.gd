@@ -3,7 +3,8 @@ extends RefCounted
 
 # The lesson screen of the approved 45-degree design proposal
 # (docs/design/pixel-system-2026-10-31, source/art.js at 0768655): progress
-# bar, speaking foreman with one bubble, board, legend and a bottom button.
+# bar, speaking foreman with one bubble, board and a bottom button (the
+# mock's wire legend is left out: its fixed slashes misled).
 # Shapes are ported from the mock's own helpers in its layout units
 # (1 unit = 2 design px). Every non-text edge is horizontal, vertical or
 # diagonal; flat colours, antialiased like the title's dynamic shapes.
@@ -69,10 +70,9 @@ const FOREMAN_AT := Vector2(6, 58)
 const BUBBLE := Rect2(62, 60, 128, 46)
 const ORIGIN := Vector2(51, 152)
 const PITCH := 46.0
-const LEGEND_Y := 296.0
 const PRIMARY := Rect2(8, 364, 178, 32)
 # Not in the three-lesson mock: the optional skip (and Back to title) sits
-# centred between the legend and the bottom button, at the mock's secondary
+# centred between the legend's former place and the bottom button, at the mock's secondary
 # button size.
 const SECONDARY := Rect2(37, 321, 120, 26)
 const SPEAKER_SPAN := {false: Vector2(0, 34.2), true: Vector2(-8.5, 22.5)}
@@ -212,32 +212,31 @@ func draw(target, model, anim: Dictionary) -> void:
 		"mistake":
 			ink = BROWN
 	_bubble(BUBBLE, String(utterance.text), ink)
-	if bool(anim.get("detail_offered", false)):
-		_detail_hint(BUBBLE)
 	_board(model, state, anim)
 	if float(anim.get("detail", -1.0)) >= 0.0:
 		_check_windows(model, float(anim.detail), reduced)
 	elif model.counts_pairs() and state.inspected:
-		# A lesson 5-7 result uses the legend's place for its warning lamp.
+		# A lesson 5-7 result uses the space below the board for its warning lamp.
 		pass
 	elif _shows_fault(model, state, anim):
 		# The answer is a tutorial reveal, not information from the floors.
 		_text("破線は元の故障、実線は自分の配線", 194, 578, MIST, "center")
 		_text("元の故障は練習用に見せている。", 194, 602, MIST, "center")
-	else:
-		_legend(LEGEND_Y)
 	if state.finished:
 		_button(SECONDARY, "secondary", "normal", "タイトルへ", false)
 	elif state.stage_id == "graduation_3x3":
 		_button(SECONDARY, "secondary", "normal", "自由練習をスキップ", false, true)
 	var can_continue: bool = state.can_continue and counting < 0.0
-	var hop: float = -1.0 if not reduced and float(anim.since_enable) < 0.18 and (can_continue or state.can_call_foreman) else 0.0
+	var detail_button: bool = bool(anim.get("detail_button", false))
+	var hop: float = -1.0 if not reduced and float(anim.since_enable) < 0.18 and (can_continue or state.can_call_foreman or detail_button) else 0.0
 	var primary := PRIMARY
 	primary.position.y += hop
 	if state.finished:
 		_button(primary, "success", "normal", "もう一度", true)
 	elif can_continue:
 		_button(primary, "success", "normal", "つづける", true)
+	elif detail_button:
+		_button(primary, "call", "normal", "くわしく見る", true)
 	elif state.inspection_mode == "call":
 		_button(primary, "call", "normal" if state.can_call_foreman or state.get("demo_next", false) else "disabled", model.call_label(), true)
 	else:
@@ -714,15 +713,8 @@ func _pointer(center: Vector2, age: float, reduced: bool) -> void:
 	_rect(tip.x + 1, tip.y - 21, 1, 8, Color(SKIN_LO, fade))
 
 
-# A small 「？」 on the bubble: a tap there opens the detailed check.
-func _detail_hint(rect: Rect2) -> void:
-	var center := Vector2(rect.end.x - 8, rect.end.y - 7)
-	_plate(center.x - 6, center.y - 6, 12, 12, 3, GOLD)
-	_text("？", center.x * U, (center.y - 5.2) * U, INK, "center")
-
-
-# The detailed check (lessons 5-7, a bubble tap on a dark board's result):
-# a small window per reported colour where the legend was. Each leftover on
+# The detailed check (lessons 5-7, 「くわしく見る」 on a leak): a small window
+# per reported colour below the board. Each leftover on
 # that colour's inspection line (fault XOR wiring: red top row, blue left
 # column) flies from its socket into the window as a particle; particles
 # vanish two by two; one left over turns the window into a warning, none
@@ -830,27 +822,6 @@ func _badge(x: float, y: float, count: int, face: Color) -> void:
 # red "\" and blue "/" are equal bands that cross exactly there, a missing
 # colour is a faint grey guide on the same centre line, and each chevron is
 # two equal arms joined at its point, centred in the gap to the next socket.
-func _legend(y: float) -> void:
-	var xs := [61.0, 83.0, 105.0, 127.0]
-	for i in 4:
-		var x: float = xs[i]
-		_plate(x - 7, y - 7, 15, 15, 4, NIGHT4)
-		_cham(x - 4, y - 4, 9, 9, 2, GROUT)
-		# Guides first, so a coloured band always lies over the grey one.
-		if not i & 1:
-			_diag(x - 3, y - 2.5, 6, 1, GUIDE)
-		if not i & 2:
-			_diag(x + 3, y - 2.5, 6, -1, GUIDE)
-		if i & 1:
-			_diag(x - 3.5, y - 2.5, 6, 1, RED, 2)
-		if i & 2:
-			_diag(x + 2.5, y - 2.5, 6, -1, BLUE, 2)
-		if i < 3:
-			# The arms meet on x + 12.25 .. x + 13.25; the chevron spans x + 9.75 .. x + 13.25, centred in the 8 .. 15 gap.
-			_diag(x + 9.75, y - 2, 2.5, 1, MIST)
-			_diag(x + 12.25, y + 0.5, 2.5, -1, MIST)
-
-
 # ---- chrome ----------------------------------------------------------------
 
 func _home(x: float, y: float) -> void:

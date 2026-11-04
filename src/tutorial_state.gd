@@ -114,7 +114,7 @@ func _build_stages() -> Array[Dictionary]:
 			# hand, the same corrections a tap makes), then checks the dark but
 			# unsafe floor. Any tap on the board or a check ends it and keeps the
 			# actual board.
-			"demo": [{"node": 1, "label": "上に赤を置く", "line": "上に赤を置いたよ。"},
+			"demo": [{"node": 1, "label": "上に赤を置く", "line": "上に赤を置いたよ。\n赤い配線は、となりの\n赤い床につながるよ。"},
 				{"node": 7, "label": "下に赤を置く", "line": "ちらつきは消えたね。\nでも、安全かな？"}],
 			# The leak of this lesson says why a dark floor is not yet fixed.
 			"leak": "暗いのに、%s電気が\n外へ抜けているよ！\n暗いだけでは足りないね。",
