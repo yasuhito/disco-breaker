@@ -197,7 +197,7 @@ try {
   const leak = await page.evaluate(() => window.discoBreakerFeedback);
   if (!leak.leak_active || leak.leak_events !== 3 || leak.leak_sound_starts !== 3 || JSON.stringify(leak.leak_routes[0].qubits) !== '[1,4,7]' || leak.leak_routes.length !== 1 || Object.keys(leak.revealed_hidden).length) throw new Error(`the trap's red leaves along its real residual route once, without a fault reveal: ${JSON.stringify(leak)}`);
   const live = await page.evaluate(() => document.getElementById("disco-breaker-live")?.textContent ?? "");
-  if (!live.includes("あっ、まだ赤い電気が外へ抜けているよ！吹き出しをタップすると、くわしく見られるよ。") || live.includes("漏電") || !live.endsWith("チェックして！ はまだ押せない")) throw new Error(`the live region must announce the latest line and the button: ${live}`);
+  if (!live.includes("暗いのに、赤い電気が外へ抜けているよ！暗いだけでは足りないね。吹き出しをタップすると、くわしく見られるよ。") || live.includes("漏電") || !live.endsWith("チェックして！ はまだ押せない")) throw new Error(`the live region must announce the latest line and the button: ${live}`);
   await captureState("stage5-leak-explained", 2300);
   await bottom();
   await assertState("state.stage === 5 && state.last_action.action === 'inspect'", "Continue stays disabled after the leak");

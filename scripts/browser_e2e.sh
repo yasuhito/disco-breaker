@@ -209,7 +209,7 @@ click_canvas 194 760 stage5-call-trap
 assert_state "${S}.inspection.red_crossing && !${S}.inspection.blue_crossing && !${S}.passed && !${S}.can_continue && !${S}.fault_revealed"
 # Lesson 5 checks for 1.0 s, then shows the red light leaving the board.
 wait_for_check_end
-assert_state "document.getElementById('disco-breaker-live').textContent.includes('あっ、まだ赤い電気が外へ抜けているよ！') && !document.getElementById('disco-breaker-live').textContent.includes('漏電') && window.discoBreakerFeedback.leak_routes.length === 1"
+assert_state "document.getElementById('disco-breaker-live').textContent.includes('暗いのに、赤い電気が外へ抜けているよ！暗いだけでは足りないね。') && !document.getElementById('disco-breaker-live').textContent.includes('漏電') && window.discoBreakerFeedback.leak_routes.length === 1"
 capture_state 16 stage5-leak-explained 2.3
 chrome-devtools-axi screenshot artifacts/tutorial-crossing-trap.png >/dev/null
 click_canvas 194 760 stage5-no-continue-after-leak
