@@ -641,6 +641,111 @@ func _test_socket_wire_crossing() -> void:
 		_expect(small.is_empty(), "socket %s: no dots" % [case])
 
 
+# What the board actually draws: on all nine sockets the red and the blue
+# wire (solid, dashed fault, change glow and removed trace) run on the
+# diagonal whose ends point at the floors of their colour around that socket
+# (from the floors' socket lists, not from the artwork), never at the other
+# colour's floors, and an end reaches into such a floor's glass. The centre
+# keeps red "＼" and blue "／".
+func _test_wire_orientation() -> void:
+	for stage in [0, 4, 5, 6]:
+		var model := Tutorial.new()
+		model.stage_index = stage
+		model._reset_stage()
+		var d := model.definition()
+		for node in 9:
+			model.corrections[node] = Tutorial.BOTH
+		var probe := _render(model, _anim())
+		for component in [Tutorial.RED, Tutorial.BLUE]:
+			var f: Dictionary = Lesson.FAMILY[component]
+			var own_faces: Array = d.red_faces if component == Tutorial.RED else d.blue_faces
+			for node in 9:
+				var center := Lesson.socket_center(node) * Lesson.U
+				var lines := _shapes(probe, f.hi).filter(func(shape): return _mean(shape).distance_to(center) < 3.0 * Lesson.U and _bounds(shape).size.y > 20.0)
+				_expect(lines.size() == 1, "lesson %d socket %d: one drawn %s wire" % [stage + 1, node, f.base.to_html(false)])
+				if lines.size() != 1:
+					continue
+				var ends := _drawn_ends(lines[0])
+				var own := _floor_directions(own_faces, node, int(d.size))
+				var other := _floor_directions(d.blue_faces if component == Tutorial.RED else d.red_faces, node, int(d.size))
+				_expect(not own.is_empty() and own.all(func(to): return to in ends) and other.all(func(to): return not to in ends), "lesson %d socket %d: the drawn %s wire points at its own floors only" % [stage + 1, node, "red" if component == Tutorial.RED else "blue"])
+				var reaches := false
+				for to in ends:
+					var tip := Lesson.socket_center(node) + Vector2(to) * 14.0
+					for face in own_faces:
+						if node in face.nodes and Lesson.face_rect(face).has_point(tip):
+							reaches = true
+				_expect(reaches, "lesson %d socket %d: the %s wire's end reaches into its floor" % [stage + 1, node, "red" if component == Tutorial.RED else "blue"])
+				if node == 4:
+					_expect(ends.has(Vector2i(1, 1)) == (component == Tutorial.RED), "lesson %d: the centre keeps red ＼ and blue ／" % (stage + 1))
+	# Dashed fault, change glow and removed trace follow the same diagonal.
+	var art := Lesson.new()
+	var trap := Tutorial.new()
+	trap.stage_index = 4
+	trap._reset_stage()
+	for node in [1, 3, 4, 7]:
+		var slants := {1: trap.wire_slant(node, 1), 2: trap.wire_slant(node, 2)}
+		var center := Lesson.socket_center(node)
+		var socket := Probe.new()
+		art.view = socket
+		art._socket(center, 0, false, false, Tutorial.BOTH, slants)
+		art._socket(center, Tutorial.BOTH, false, false, 0, slants)
+		for component in [1, 2]:
+			var f: Dictionary = Lesson.FAMILY[component]
+			var pieces := _shapes(socket, f.base).filter(func(shape): return _bounds(shape).size.y < 6.0 * Lesson.U)
+			var solid := _shapes(socket, f.hi).filter(func(shape): return _bounds(shape).size.y > 20.0)
+			_expect(pieces.size() >= 4 and solid.size() == 1 and pieces.all(func(piece): return _drawn_ends(solid[0]).has(_sign2(_mean(piece) - center * Lesson.U)) or _mean(piece).distance_to(center * Lesson.U) < 2.0 * Lesson.U), "socket %d: the dashed fault lies on the wire's diagonal" % node)
+			for present in [true, false]:
+				var glow := Probe.new()
+				art.view = glow
+				art._wire_glow(center, component, int(slants[component]), present, 1.0)
+				var band: Array = glow.polygons.filter(func(shape): return _bounds(shape).size.y > 20.0)
+				_expect(not band.is_empty() and band.all(func(shape): return _drawn_ends(shape) == _drawn_ends(solid[0])), "socket %d: the %s glow follows the wire" % [node, "change" if present else "removed"])
+
+
+# The two end directions (signs, y down) of a drawn diagonal band.
+func _drawn_ends(shape: PackedVector2Array) -> Array:
+	var top := shape[0]
+	var bottom := shape[0]
+	for point in shape:
+		if point.y < top.y:
+			top = point
+		if point.y > bottom.y:
+			bottom = point
+	var middle := (top + bottom) * 0.5
+	return [_sign2(top - middle), _sign2(bottom - middle)]
+
+
+static func _sign2(v: Vector2) -> Vector2i:
+	return Vector2i(int(signf(v.x)), int(signf(v.y)))
+
+
+# The diagonal directions (signs, y down) from a socket to the floors of one
+# colour that contain it, from the floors' socket lists: a four-socket floor's
+# middle, or a two-socket floor's edge middle moved half a cell off the board.
+static func _floor_directions(faces: Array, node: int, size: int) -> Array:
+	var at := Vector2(node % size, node / size)
+	var result := []
+	for face in faces:
+		if not node in face.nodes:
+			continue
+		var middle := Vector2.ZERO
+		for corner in face.nodes:
+			middle += Vector2(int(corner) % size, int(corner) / size)
+		middle /= face.nodes.size()
+		if face.nodes.size() == 2:
+			if is_equal_approx(middle.x, 0.0):
+				middle.x -= 0.5
+			elif is_equal_approx(middle.x, size - 1.0):
+				middle.x += 0.5
+			elif is_equal_approx(middle.y, 0.0):
+				middle.y -= 0.5
+			else:
+				middle.y += 0.5
+		result.append(_sign2(middle - at))
+	return result
+
+
 # The foreman's face and shirt are symmetric about the head's centre in every
 # pose; the happy eyes are joined "^" shapes; the collar ends on the tie.
 func _test_foreman_alignment() -> void:
@@ -1263,6 +1368,7 @@ func _run() -> void:
 	_test_check_detail_plan()
 	_test_legend_alignment()
 	_test_socket_wire_crossing()
+	_test_wire_orientation()
 	_test_foreman_alignment()
 	var bell_references := View.LESSON1_BELL.get_reference_count()
 	var view := View.new()

@@ -83,6 +83,37 @@ func _at(stage: int, phase := 0) -> Tutorial:
 
 
 # Tap from the current board to the given wiring (each box at most 3 taps).
+# The diagonal directions (signs of x and y, grid y down) from a socket to the
+# floors of one colour that contain it, from the floors' socket lists: a
+# four-socket floor's middle, or a two-socket floor's edge middle moved half a
+# cell off the board.
+static func _floor_directions(faces: Array, node: int, size: int) -> Array:
+	var at := Vector2(node % size, node / size)
+	var result := []
+	for face in faces:
+		if not node in face.nodes:
+			continue
+		var middle := Vector2.ZERO
+		for corner in face.nodes:
+			middle += Vector2(int(corner) % size, int(corner) / size)
+		middle /= face.nodes.size()
+		if face.nodes.size() == 2:
+			if is_equal_approx(middle.x, 0.0):
+				middle.x -= 0.5
+			elif is_equal_approx(middle.x, size - 1.0):
+				middle.x += 0.5
+			elif is_equal_approx(middle.y, 0.0):
+				middle.y -= 0.5
+			else:
+				middle.y += 0.5
+		result.append(_sign2(middle - at))
+	return result
+
+
+static func _sign2(v: Vector2) -> Vector2i:
+	return Vector2i(int(signf(v.x)), int(signf(v.y)))
+
+
 func _wire(model: Tutorial, wiring: Dictionary) -> int:
 	var taps := 0
 	for node in model.corrections.size():
@@ -1055,12 +1086,29 @@ func _test_color_families_and_wire_directions() -> void:
 	both.corrections[5] = Tutorial.BLUE
 	var result := both._inspect_residual()
 	_expect(both.is_dark() and result.red_crossing and result.blue_crossing, "Y center participates in independent X and Z residual chains")
-	# Red is always "\" and blue always "/", on every socket; the dashed
-	# original fault uses the same band as the player's wire.
-	for node in 9:
-		var center := Lesson.socket_center(node)
-		var r := Lesson.wire_band(center, Tutorial.RED)
-		var b := Lesson.wire_band(center, Tutorial.BLUE)
-		_expect(r[1].x > r[0].x and r[1].y > r[0].y and is_equal_approx(r[1].x - r[0].x, r[1].y - r[0].y), "red wire is a 45-degree backslash")
-		_expect(b[1].x < b[0].x and b[1].y > b[0].y and is_equal_approx(b[0].x - b[1].x, b[1].y - b[0].y), "blue wire is a 45-degree forward slash")
-		_expect(((r[0] + r[1]) * 0.5).distance_to(center) <= 1.0 and ((b[0] + b[1]) * 0.5).distance_to(center) <= 1.0, "both wires cross at their socket")
+	# On every socket of every lesson each colour's wire is a 45-degree band
+	# whose ends point at the floors of that colour it changes (from the
+	# floors' own socket lists), never at a floor of the other colour; red
+	# and blue still cross at the socket, and the centre keeps red "\".
+	for stage in Tutorial.new().stages().size():
+		var model := Tutorial.new()
+		model.stage_index = stage
+		model._reset_stage()
+		var d := model.definition()
+		for node in 9:
+			var center := Lesson.socket_center(node)
+			var bands := {}
+			for component in [Tutorial.RED, Tutorial.BLUE]:
+				var band := Lesson.wire_band(center, model.wire_slant(node, component))
+				bands[component] = band
+				var ends := [_sign2(band[0] - center), _sign2(band[1] - center)]
+				_expect(is_equal_approx(absf(band[1].x - band[0].x), band[1].y - band[0].y), "lesson %d socket %d: a 45-degree band" % [stage + 1, node])
+				var own: Array = _floor_directions(d.red_faces if component == Tutorial.RED else d.blue_faces, node, int(d.size))
+				var other: Array = _floor_directions(d.blue_faces if component == Tutorial.RED else d.red_faces, node, int(d.size))
+				_expect(not own.is_empty() and own.all(func(to): return to in ends), "lesson %d socket %d: each %s floor it changes is at an end of its wire" % [stage + 1, node, "red" if component == Tutorial.RED else "blue"])
+				_expect(other.all(func(to): return not to in ends), "lesson %d socket %d: the %s wire points at no floor of the other colour" % [stage + 1, node, "red" if component == Tutorial.RED else "blue"])
+			var r: PackedVector2Array = bands[Tutorial.RED]
+			var b: PackedVector2Array = bands[Tutorial.BLUE]
+			_expect(((r[0] + r[1]) * 0.5).distance_to(center) <= 1.0 and ((b[0] + b[1]) * 0.5).distance_to(center) <= 1.0 and _sign2(r[1] - r[0]) != _sign2(b[1] - b[0]), "lesson %d socket %d: red and blue cross at their socket" % [stage + 1, node])
+		var middle := Lesson.wire_band(Lesson.socket_center(4), model.wire_slant(4, Tutorial.RED))
+		_expect(middle[1].x > middle[0].x, "lesson %d: the centre's red stays \\" % (stage + 1))

@@ -194,6 +194,35 @@ func definition() -> Dictionary:
 	return stages()[stage_index]
 
 
+# The diagonal a colour's wire takes on a socket (1 is "＼", -1 is "／"), so
+# that its ends point at the floors of that colour it changes. Around a
+# socket the floors alternate, so one colour's floors lie on one diagonal and
+# the other colour's on the other; on the centre red is "＼". A socket without
+# a floor of a colour takes the diagonal the other colour leaves.
+func wire_slant(node: int, component: int) -> int:
+	var own := _slant_toward(node, component)
+	if own != 0:
+		return own
+	var other := _slant_toward(node, BLUE if component == RED else RED)
+	if other != 0:
+		return -other
+	return 1 if component == RED else -1
+
+
+func _slant_toward(node: int, component: int) -> int:
+	var d := definition()
+	var size := int(d.size)
+	var at := Vector2(node % size + 0.5, node / size + 0.5)
+	var slant := 0
+	for face in (d.red_faces if component == RED else d.blue_faces):
+		if node in face.nodes:
+			var to: Vector2 = face.center - at
+			var toward := int(signf(to.x) * signf(to.y))
+			assert(slant == 0 or slant == toward, "a colour's floors around a socket lie on one diagonal")
+			slant = toward
+	return slant
+
+
 # The bottom button's label while it calls the foreman, or names the
 # demonstration's next placement.
 func call_label() -> String:

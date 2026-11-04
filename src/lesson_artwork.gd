@@ -159,9 +159,11 @@ static func face_rect(face: Dictionary) -> Rect2:
 
 
 # The 45-degree band of a wire on a socket, as the mock draws it.
-static func wire_band(center: Vector2, component: int) -> PackedVector2Array:
-	var x0 := center.x - 7.0 if component == 1 else center.x + 6.0
-	var dx := 1.0 if component == 1 else -1.0
+# A wire's band through its socket on the diagonal `slant` (1 "＼", -1 "／";
+# TutorialState.wire_slant points it at the floors it changes).
+static func wire_band(center: Vector2, slant: int) -> PackedVector2Array:
+	var x0 := center.x - 7.0 if slant > 0 else center.x + 6.0
+	var dx := 1.0 if slant > 0 else -1.0
 	return PackedVector2Array([Vector2(x0, center.y - 7.0), Vector2(x0 + 14.0 * dx, center.y + 7.0)])
 
 
@@ -343,10 +345,11 @@ func _board(model, state: Dictionary, anim: Dictionary) -> void:
 	for node in 9:
 		var hidden := int(d.hidden.get(node, 0)) if reveal else 0
 		var pressed: bool = not reduced and node == int(anim.pressed_node) and float(anim.since_press) < 0.11
-		_socket(socket_center(node), int(state.corrections[node]), pressed, happy and node == target, hidden)
+		var slants := {1: model.wire_slant(node, 1), 2: model.wire_slant(node, 2)}
+		_socket(socket_center(node), int(state.corrections[node]), pressed, happy and node == target, hidden, slants)
 		if glow > 0.0 and node == int(change.node):
 			for wire in change.wires:
-				_wire_glow(socket_center(node) + Vector2(0, 1.0 if pressed else 0.0), int(wire.component), bool(wire.present), glow)
+				_wire_glow(socket_center(node) + Vector2(0, 1.0 if pressed else 0.0), int(wire.component), int(slants[int(wire.component)]), bool(wire.present), glow)
 	if int(anim.get("demo_node", -1)) >= 0 and float(anim.get("demo_age", SETTLE_DEMO)) < DEMO_POINT_TIME:
 		_pointer(socket_center(int(anim.demo_node)), float(anim.demo_age), reduced)
 	if leak and model.counts_pairs() and age >= 0.0:
@@ -429,7 +432,8 @@ func _stripe_pieces(rect: Rect2, direction: int) -> Array:
 	return pieces
 
 
-func _socket(center: Vector2, code: int, pressed: bool, success: bool, hidden: int) -> void:
+# `slants` gives each colour's diagonal on this socket (the centre's by default).
+func _socket(center: Vector2, code: int, pressed: bool, success: bool, hidden: int, slants := {1: 1, 2: -1}) -> void:
 	var x := center.x - 13
 	var y := center.y - 13
 	var s := 26.0
@@ -448,33 +452,33 @@ func _socket(center: Vector2, code: int, pressed: bool, success: bool, hidden: i
 	# its wire's own centred band, under any dashed fault and solid wire.
 	for component in [1, 2]:
 		if not code & component:
-			_guide(cap, component)
+			_guide(cap, component, int(slants[component]))
 	for component in [1, 2]:
 		if hidden & component:
-			_wire(cap, component, true)
+			_wire(cap, component, int(slants[component]), true)
 	for component in [1, 2]:
 		if code & component:
-			_wire(cap, component, false)
-	# "0": the player's wire cancels the original fault on this socket.
-	if hidden & code & 1:
-		_zero_mark(center.x + 6, center.y + 4)
-	if hidden & code & 2:
-		_zero_mark(center.x - 10, center.y + 4)
+			_wire(cap, component, int(slants[component]), false)
+	# "0": the player's wire cancels the original fault on this socket; it
+	# sits below the wire's lower end ("＼" right, "／" left).
+	for component in [1, 2]:
+		if hidden & code & component:
+			_zero_mark(center.x + (6 if int(slants[component]) > 0 else -10), center.y + 4)
 
 
-func _guide(center: Vector2, component: int) -> void:
-	var band := wire_band(center, component)
-	var dx := 1.0 if component == 1 else -1.0
+func _guide(center: Vector2, _component: int, slant: int) -> void:
+	var band := wire_band(center, slant)
+	var dx := float(slant)
 	_diag(band[0].x - 0.5 * dx, band[0].y, 14, dx, GUIDE)
 
 
-func _wire(center: Vector2, component: int, dashed: bool) -> void:
+func _wire(center: Vector2, component: int, slant: int, dashed: bool) -> void:
 	var f: Dictionary = FAMILY[component]
 	var n := 14.0
-	var band := wire_band(center, component)
+	var band := wire_band(center, slant)
 	var x0: float = band[0].x
 	var y0: float = band[0].y
-	var dx := 1.0 if component == 1 else -1.0
+	var dx := float(slant)
 	var segments := [[0, 2], [4, 6], [8, 10], [12, 14]] if dashed else [[0, 14]]
 	# The bands' centre lines run through the socket's centre and the tips'
 	# centres, so red and blue cross exactly at the centre.
@@ -505,10 +509,10 @@ static func floor_outline(face: Dictionary) -> PackedVector2Array:
 
 # The changed wire lights up on its own diagonal: a present wire glows in its
 # colour with a white core; a removed one leaves a fading coloured trace.
-func _wire_glow(center: Vector2, component: int, present: bool, alpha: float) -> void:
+func _wire_glow(center: Vector2, component: int, slant: int, present: bool, alpha: float) -> void:
 	var f: Dictionary = FAMILY[component]
-	var band := wire_band(center, component)
-	var dx := 1.0 if component == 1 else -1.0
+	var band := wire_band(center, slant)
+	var dx := float(slant)
 	var bx: float = band[0].x - 0.5 * dx
 	var y0: float = band[0].y
 	if present:
