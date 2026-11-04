@@ -387,6 +387,18 @@ func _test_check_detail(view) -> void:
 	view._publish_semantics()
 	_expect(spoken.call() == "暗いのに、赤い電気が\n外へ抜けているよ！\n暗いだけでは足りないね。" and view._detail_offered() and view.semantic_state().detail_offered, "the leak is spoken, and the bottom button offers the detail")
 	_expect(drawn.call() == [["くわしく見る", true]], "the bottom button reads an enabled 「くわしく見る」; no 「？」 on the bubble")
+	# The newly offered button hops once, like any newly enabled button;
+	# reduced motion never hops.
+	var label_y := func(reduced: bool) -> float:
+		var probe := _render(view.model, _anim(0.0, reduced, {"state": view.semantic_state(), "detail_button": view._detail_offered(), "since_enable": view._enable_age}))
+		var found: Array = probe.texts.filter(func(entry): return entry.text == "くわしく見る")
+		return found[0].position.y if found.size() == 1 else INF
+	var hopping: float = label_y.call(false)
+	var still: float = label_y.call(true)
+	_expect(view._enable_age < 0.1 and is_equal_approx(hopping, still - Lesson.U), "when the foreman's check ends, 「くわしく見る」 hops once (one unit up)")
+	view._process(0.3)
+	view._publish_semantics()
+	_expect(view._enable_age >= 0.3 and is_equal_approx(label_y.call(false), still), "it hops only once; later publishes do not restart it")
 	_expect(view._announcement(view.semantic_state()).ends_with("外へ抜けているよ！暗いだけでは足りないね。」。くわしく見る を押せる") and not view._announcement(view.semantic_state()).contains("吹き出し"), "the announcement names the button, not the bubble")
 	_expect(view._leak_routes.size() == 1 and int(view._leak_routes[0].component) == 1 and view._leak_routes[0].qubits == [1, 4, 7], "the view's leaving route is the red chain 1-4-7")
 	var trace_size: int = view.model.trace.size()

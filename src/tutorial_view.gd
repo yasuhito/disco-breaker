@@ -561,7 +561,7 @@ func _publish_semantics() -> void:
 	if utterance != _last_utterance:
 		_last_utterance = utterance
 		_talk_age = 0.0
-	var ready := bool(state.continue_enabled) or bool(state.can_call_foreman)
+	var ready := bool(state.continue_enabled) or bool(state.can_call_foreman) or bool(state.get("detail_offered", false))
 	if ready and not _last_ready:
 		_enable_age = 0.0
 	_last_ready = ready

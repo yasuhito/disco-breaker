@@ -818,10 +818,6 @@ func _badge(x: float, y: float, count: int, face: Color) -> void:
 	_text(str(count), x * U, (y - 4.6) * U, INK, "center")
 
 
-# Each socket's plate spans x - 7 .. x + 8, so its centre is (x + 0.5, y + 0.5):
-# red "\" and blue "/" are equal bands that cross exactly there, a missing
-# colour is a faint grey guide on the same centre line, and each chevron is
-# two equal arms joined at its point, centred in the gap to the next socket.
 # ---- chrome ----------------------------------------------------------------
 
 func _home(x: float, y: float) -> void:
