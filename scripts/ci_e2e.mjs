@@ -190,7 +190,7 @@ try {
   const leak = await page.evaluate(() => window.discoBreakerFeedback);
   if (!leak.leak_active || leak.leak_events !== 3 || leak.leak_sound_starts !== 3 || JSON.stringify(leak.leak_routes[0].qubits) !== '[1,4,7]' || leak.leak_routes.length !== 1 || Object.keys(leak.revealed_hidden).length) throw new Error(`the trap's red leaves along its real residual route once, without a fault reveal: ${JSON.stringify(leak)}`);
   const live = await page.evaluate(() => document.getElementById("disco-breaker-live")?.textContent ?? "");
-  if (!live.includes("あっ、まだ赤い電気が外へ抜けているよ！") || live.includes("漏電") || !live.endsWith("チェックして！ はまだ押せない")) throw new Error(`the live region must announce the latest line and the button: ${live}`);
+  if (!live.includes("あっ、まだ赤い電気が外へ抜けているよ！吹き出しをタップすると、くわしく見られるよ。") || live.includes("漏電") || !live.endsWith("チェックして！ はまだ押せない")) throw new Error(`the live region must announce the latest line and the button: ${live}`);
   await captureState("stage5-leak-explained", 2300);
   await bottom();
   await assertState("state.stage === 5 && state.last_action.action === 'inspect'", "Continue stays disabled after the leak");
@@ -206,8 +206,10 @@ try {
   await assertState("state.continue_enabled && state.utterance.text === 'よし、もう外へ抜けないね。\\nこれで安心！'", "the pass says nothing leaves any more");
   // The optional detailed check: a tap on the bubble, no new game state.
   const beforeDetail = await page.evaluate(() => window.discoBreakerState.action_count);
-  await clickCanvas(194, 120);
-  await assertState(`state.check_detail && state.action_count === ${beforeDetail} && state.continue_enabled && document.getElementById('disco-breaker-live').textContent.includes('2こで消える。1こ残ったら、まだ直そう！')`, "a bubble tap opens the detailed check without changing the game");
+  await clickCanvas(256, 166); // the bubble
+  await assertState(`state.check_detail && state.action_count === ${beforeDetail} && state.continue_enabled && document.getElementById('disco-breaker-live').textContent.includes('親方「よし、もう外へ抜けないね。これで安心！くわしく：2こで消える。1こ残ったら、まだ直そう！')`, "a bubble tap opens the detailed check without changing the game; the pass stays first");
+  await page.waitForFunction(() => window.discoBreakerState.check_detail_result === "全部、組で消えたね！", null, { timeout: 8000 });
+  await assertState("document.getElementById('disco-breaker-live').textContent.includes('まだ直そう！全部、組で消えたね！')", "the canonical repair's detail ends with everything gone in pairs");
   await captureState("stage5-pass");
   await bottom();
 

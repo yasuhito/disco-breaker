@@ -450,7 +450,9 @@ func _test_foreman_copy_fits_bubble() -> void:
 					copy.append(String(line))
 	for text in Tutorial.LEAVING.values():
 		copy.append(String(text))
-	copy.append(Tutorial.CHECK_DETAIL)
+	copy.append(Tutorial.CHECK_DETAIL + "\n" + Tutorial.DETAIL_ALL_GONE)
+	for text in Tutorial.DETAIL_LEFT.values():
+		copy.append(Tutorial.CHECK_DETAIL + "\n" + String(text))
 	# The bubble holds three 24 px lines in its 114-unit text column, also in bold.
 	# The human-approved third lines of lessons 1, 2 and 4 are wider: they must
 	# still stay on the paper (bubble 256 px - 14 px text inset - 2 px ink

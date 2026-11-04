@@ -229,7 +229,16 @@ func _test_visual_check() -> void:
 	var c0 := Lesson.socket_center(0)
 	var c8 := Lesson.socket_center(8)
 	_expect(lamp.y > c8.y + 30 and lamp.x - 10 > 0 and lamp.x + 10 < 195, "the red lamp is outside the board, on the screen")
-	_expect(lamp.y + 7.0 + 1.0 <= Lesson.CHECK_WINDOW_Y, "the red lamp stays clear of the detailed check's windows")
+	# The lit lamp's full extent, rays and stroke included, as drawn.
+	var lamp_px: Vector2 = lamp * Lesson.U
+	var lowest := -INF
+	for entry in lit.probe.log:
+		if entry[0] in ["polygon", "polyline"]:
+			var width: float = entry[3] * 0.5 if entry[0] == "polyline" else 0.0
+			for point in entry[1]:
+				if point.distance_to(lamp_px) <= 16.0 * Lesson.U:
+					lowest = maxf(lowest, point.y + width)
+	_expect(lowest > (lamp.y + 7.0) * Lesson.U and lowest < Lesson.CHECK_WINDOW_Y * Lesson.U, "the red lamp, rays and strokes included, stays above the detailed check's windows")
 	_expect(Lesson.CHECK_WINDOW_Y + 26.0 + 1.0 <= Lesson.SECONDARY.position.y, "the windows stay clear of the skip button")
 	_expect(not lit.texts.any(func(text): return text.contains("こ") or text.contains("漏電")), "no counts and no 「漏電」 on the board")
 	var still := _check_board(trap, 0.0, true)
@@ -309,6 +318,12 @@ func _test_visual_check() -> void:
 # The detailed check's plan, from real counts: particles fly in one after
 # another, pairs vanish, one left over warns, none is green.
 func _test_check_detail_plan() -> void:
+	_expect(Lesson.LAMP_RAY_FROM > 5.0, "lamp rays start outside the chamfered body (its diagonal reaches 5 units)")
+	for case in [[{}, "全部、組で消えたね！"], [{1: Tutorial.EMPTY, 7: Tutorial.EMPTY, 3: Tutorial.BLUE, 4: Tutorial.BOTH, 5: Tutorial.BLUE}, "青が1こ残ったよ。"], [{1: Tutorial.BOTH, 7: Tutorial.RED, 0: Tutorial.BLUE}, "赤と青が1こずつ残ったよ。"]]:
+		var model := _at_lesson(6 if case[0].has(0) else 4, case[0], false)
+		if case[0].is_empty():
+			_wire(model, {1: Tutorial.RED, 2: Tutorial.RED, 5: Tutorial.RED, 7: Tutorial.EMPTY})
+		_expect(model.detail_result() == case[1], "detail result from the real counts: %s" % case[1])
 	for case in [[0, false, true], [1, true, false], [2, false, true], [3, true, false]]:
 		var final := Lesson.detail_plan(case[0], Lesson.DETAIL_DONE)
 		_expect(final.warning == case[1] and final.green == case[2], "%d marks: %s" % [case[0], "one left warns" if case[1] else "nothing left is green"])
@@ -317,6 +332,12 @@ func _test_check_detail_plan() -> void:
 	var early := Lesson.detail_plan(2, Lesson.DETAIL_FLY_AT + 0.1)
 	_expect(early.flights[0] > 0.0 and early.flights[1] == 0.0 and not early.green, "particles fly in one after another")
 	_expect(Lesson.DETAIL_DONE <= View.DETAIL_TIME, "the view's detail time covers the plan")
+
+
+# Advance the view in 0.1 s frames.
+func _frames(view, seconds: float) -> void:
+	for frame in int(seconds / 0.1) + 1:
+		view._process(0.1)
 
 
 func _sorted(values: Array) -> Array:
@@ -356,6 +377,7 @@ func _test_check_detail(view) -> void:
 	view._process(View.COUNT_TIME + 0.05)
 	view._publish_semantics()
 	_expect(spoken.call() == "あっ、まだ赤い電気が\n外へ抜けているよ！" and view._detail_available(), "the leak is spoken, and the detail is offered")
+	_expect(view._announcement(view.semantic_state()).contains("外へ抜けているよ！吹き出しをタップすると、くわしく見られるよ。"), "the optional detail is announced as optional")
 	_expect(view._leak_routes.size() == 1 and int(view._leak_routes[0].component) == 1 and view._leak_routes[0].qubits == [1, 4, 7], "the view's leaving route is the red chain 1-4-7")
 	var trace_size: int = view.model.trace.size()
 	view._handle_design_tap(bubble)
@@ -364,6 +386,14 @@ func _test_check_detail(view) -> void:
 	view._process(1.0)
 	view._handle_design_tap(bubble)
 	_expect(view._detail_age == 0.0, "another tap replays it")
+	# The words: the rule, then the actual result once the windows show it;
+	# the announcement keeps the check's verdict first.
+	_expect(view.semantic_state().check_detail_result.is_empty() and spoken.call() == Tutorial.CHECK_DETAIL, "before the windows settle only the rule")
+	_expect(view._announcement(view.semantic_state()).contains("あっ、まだ赤い電気が外へ抜けているよ！くわしく：2こで消える。"), "the announcement keeps the leak first")
+	_frames(view, View.DETAIL_TIME)
+	view._publish_semantics()
+	_expect(view.semantic_state().check_detail_result == "赤が1こ残ったよ。" and spoken.call() == Tutorial.CHECK_DETAIL + "\n赤が1こ残ったよ。", "then the actual result: one red left")
+	_expect(view._announcement(view.semantic_state()).contains("外へ抜けているよ！くわしく：2こで消える。1こ残ったら、まだ直そう！赤が1こ残ったよ。"), "and the announcement says it too")
 	view._show_title()
 	view._open_tutorial()
 	view._navigation_guard_until = 0
@@ -407,6 +437,9 @@ func _test_check_detail(view) -> void:
 	_expect(view.model.passed() and view._leak_routes.is_empty(), "a chain that crosses the top row twice is safe: no leaving light")
 	view._handle_design_tap(bubble)
 	_expect(spoken.call() == Tutorial.CHECK_DETAIL and view.semantic_state().continue_enabled, "the detail never blocks Continue")
+	_frames(view, View.DETAIL_TIME)
+	view._publish_semantics()
+	_expect(spoken.call().ends_with("全部、組で消えたね！") and view._announcement(view.semantic_state()).begins_with("レッスン 5 / 7。親方「よし、もう外へ抜けないね。これで安心！くわしく："), "a safe board's detail ends all gone and is announced after its pass")
 	# Lesson 7: red leaves (column 1-4-7) while blue's two rows form an
 	# edge-to-edge chain that crosses the left column twice: only red leaves.
 	view.model.stage_index = 6

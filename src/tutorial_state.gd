@@ -18,6 +18,9 @@ const LEAK_AGAIN := "まだ漏電。\n"
 const LEAVING := {"red": "あっ、まだ赤い電気が\n外へ抜けているよ！", "blue": "あっ、まだ青い電気が\n外へ抜けているよ！", "both": "あっ、まだ赤と青の電気が\n外へ抜けているよ！"}
 # The optional detailed check: leftovers on the inspection lines, in pairs.
 const CHECK_DETAIL := "2こで消える。\n1こ残ったら、まだ直そう！"
+# Said when the detailed check's windows show their result.
+const DETAIL_ALL_GONE := "全部、組で消えたね！"
+const DETAIL_LEFT := {"red": "赤が1こ残ったよ。", "blue": "青が1こ残ったよ。", "both": "赤と青が1こずつ残ったよ。"}
 # Hints for a lit floor, used only while they describe the actual board.
 const LIT_HINTS := {
 	"red_one_tap": "光る床が残っている。\n中央を押してみよう。",
@@ -371,6 +374,17 @@ func _lit_line() -> String:
 			if others_clean and at_target in [RED, BLUE]:
 				return LIT_HINTS.combined_three_taps
 	return LIT_GENERIC
+
+
+# The detailed check's result, from the real counts on the reported lines.
+func detail_result() -> String:
+	var left: Array[int] = []
+	for component in counted_components():
+		if cut_marks(component).size() % 2 == 1:
+			left.append(component)
+	if left.is_empty():
+		return DETAIL_ALL_GONE
+	return String(DETAIL_LEFT["both" if left.size() == 2 else ("red" if left[0] == RED else "blue")])
 
 
 func counts_pairs() -> bool:

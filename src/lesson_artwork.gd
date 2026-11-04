@@ -97,6 +97,12 @@ const DETAIL_FLY := 0.6
 const DETAIL_PAIR := 0.4
 const DETAIL_DONE := 3.6
 const CHECK_WINDOW_Y := 294.0
+# The lit warning lamp's four diagonal rays (units from its centre): outside
+# its 14-unit chamfered body, and short enough to stay clear of the windows.
+const LAMP_RAYS := [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]
+const LAMP_RAY_FROM := 6.0
+const LAMP_RAY_TO := 8.0
+const LAMP_RAY_WIDTH := 1.5
 # A wiring tap's floor outlines and wire glow (the view's CHANGE_TIME): full
 # for the first part, then one smooth fade; reduced motion holds it unfaded.
 const CHANGE_HOLD := 0.15
@@ -666,8 +672,8 @@ func _warning_lamp(center: Vector2, component: int, lit: bool) -> void:
 	_plate(center.x - 7, center.y - 7, 14, 14, 4, f.base if lit else NIGHT3)
 	if lit:
 		_cham(center.x - 3, center.y - 3, 6, 6, 2, f.hi)
-		for ray in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
-			_stroke(PackedVector2Array([center + ray * 8.0, center + ray * 10.0]), f.hi, 1.5)
+		for ray in LAMP_RAYS:
+			_stroke(PackedVector2Array([center + ray * LAMP_RAY_FROM, center + ray * LAMP_RAY_TO]), f.hi, LAMP_RAY_WIDTH)
 
 
 # A safe check in lessons 5-7: a green check beside the board.
@@ -735,6 +741,11 @@ func _check_windows(model, age: float, reduced: bool) -> void:
 			_stroke(PackedVector2Array([center + Vector2(-4, 0), center + Vector2(-1, 3), center + Vector2(5, -3)]), MINT, 2.0)
 
 
+# When a window with this many marks shows its result.
+static func detail_settle(count: int) -> float:
+	return DETAIL_FLY_AT + count * DETAIL_FLY_STEP + DETAIL_FLY + int(count / 2.0) * DETAIL_PAIR + 0.2
+
+
 # When each particle flies (0..1), when it vanishes in its pair (0..1), and
 # the window's result, for a count of marks at an age (data; tests check it).
 static func detail_plan(count: int, age: float) -> Dictionary:
@@ -745,7 +756,7 @@ static func detail_plan(count: int, age: float) -> Dictionary:
 		flights.append(clampf((age - DETAIL_FLY_AT - i * DETAIL_FLY_STEP) / DETAIL_FLY, 0.0, 1.0))
 		var pair := int(i / 2.0)
 		vanish.append(0.0 if i == count - 1 and count % 2 == 1 else clampf((age - arrived - pair * DETAIL_PAIR) / DETAIL_PAIR, 0.0, 1.0))
-	var settled := age >= arrived + int(count / 2.0) * DETAIL_PAIR + 0.2
+	var settled := age >= detail_settle(count)
 	return {"flights": flights, "vanish": vanish, "warning": settled and count % 2 == 1, "green": settled and count % 2 == 0}
 
 

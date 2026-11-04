@@ -151,8 +151,11 @@ func _process(delta: float) -> void:
 	if counting and not _counting():
 		_finish_counting()
 	if _detailing() and _detail_age < DETAIL_TIME:
+		var settled := _detail_settled()
 		_detail_age += delta
 		queue_redraw()
+		if _detail_settled() != settled:
+			_publish_semantics()
 	# Runs in reduced motion too, where the outline is static and then gone.
 	if _change_age < CHANGE_TIME:
 		_change_age += delta
@@ -256,6 +259,8 @@ func semantic_state() -> Dictionary:
 	state["counting"] = _counting()
 	state["continue_enabled"] = model.can_continue() and not state.counting
 	state["check_detail"] = _detailing()
+	# The detailed check's result once its windows show it (else empty).
+	state["check_detail_result"] = model.detail_result() if state.check_detail and _detail_settled() else ""
 	return state
 
 
@@ -549,16 +554,36 @@ func _spoken(state: Dictionary) -> String:
 	if state.get("counting", false):
 		return String(_definition.lines.call)
 	if state.get("check_detail", false):
-		return Tutorial.CHECK_DETAIL
+		# The rule, then (once the windows show it) the actual result.
+		return Tutorial.CHECK_DETAIL + ("\n" + model.detail_result() if _detail_settled() else "")
 	return String(state.utterance.text)
+
+
+# The detailed check's windows have all shown their result.
+func _detail_settled() -> bool:
+	var settle := 0.0
+	for component in model.counted_components():
+		settle = maxf(settle, Lesson.detail_settle(model.cut_marks(component).size()))
+	return _detail_age >= settle
 
 
 # Screen readers hear the foreman's latest line and the button state, once
 # per change, through a visually hidden live region.
 func _announce(state: Dictionary) -> void:
-	var text := "タイトル画面" if at_title else "レッスン %d / %d。親方「%s」。%s" % [
-		state.stage, state.stage_count, _readable(_spoken(state)), _button_announcement(state)]
+	var text := _announcement(state)
 	JavaScriptBridge.eval("(() => { let live = document.getElementById('disco-breaker-live'); if (!live) { live = document.createElement('div'); live.id = 'disco-breaker-live'; live.setAttribute('aria-live', 'polite'); live.setAttribute('role', 'status'); live.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap'; document.body.appendChild(live); } const text = %s; if (live.textContent !== text) live.textContent = text; })()" % JSON.stringify(text))
+
+
+func _announcement(state: Dictionary) -> String:
+	var said := _readable(_spoken(state))
+	# The detailed check keeps the check's actual result first; an offered
+	# detail is announced as optional.
+	if state.get("check_detail", false):
+		said = _readable(String(state.utterance.text)) + "くわしく：" + said
+	elif _detail_available():
+		said += "吹き出しをタップすると、くわしく見られるよ。"
+	return "タイトル画面" if at_title else "レッスン %d / %d。親方「%s」。%s" % [
+		state.stage, state.stage_count, said, _button_announcement(state)]
 
 
 # A bubble's lines as one announcement: prose lines run on, and a count line
