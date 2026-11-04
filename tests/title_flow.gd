@@ -61,6 +61,7 @@ func _run() -> void:
 	# A revealed leak can be left/resumed without replaying the discharge.
 	view.model.stage_index = 4
 	view.model._reset_stage()
+	view.model.play_demo()
 	view.model._record("next_stage", {})
 	view._publish_semantics()
 	view._navigation_guard_until = 0

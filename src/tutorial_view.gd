@@ -95,6 +95,8 @@ var _change_node := -1
 var _change_age := SETTLED
 var _change_sequence := -1
 var _detail_sequence := -1
+# Since the foreman last placed a demonstration wire (seconds).
+var _demo_age := SETTLED
 var _detail_age := DETAIL_TIME
 # The title press has its own player, so nothing that stops lesson audio on
 # entry can cut it; only mute does.
@@ -150,6 +152,7 @@ func _process(delta: float) -> void:
 		queue_redraw()
 	if counting and not _counting():
 		_finish_counting()
+	_demo_age += delta
 	if _detailing() and _detail_age < DETAIL_TIME:
 		var settled := _detail_settled()
 		_detail_age += delta
@@ -290,6 +293,11 @@ func _handle_design_tap(point: Vector2) -> void:
 	if HOME_RECT.has_point(point):
 		_show_title()
 		return
+	# During the demonstration the bubble shows the foreman's next step.
+	if model.demo_active() and Lesson.px(Lesson.BUBBLE).has_point(point):
+		if _advance_demo():
+			queue_redraw()
+		return
 	# The bubble on a check's result opens (or replays) the detailed check.
 	if _detail_available() and Lesson.px(Lesson.BUBBLE).has_point(point):
 		_detail_sequence = model.trace.size()
@@ -329,9 +337,30 @@ func _handle_design_tap(point: Vector2) -> void:
 func _tap(row: int, column: int) -> bool:
 	var size := int(model.definition().size)
 	var node := row * size + column
+	if row < 0 or row >= size or column < 0 or column >= size:
+		return false
+	return _changing(node, func() -> bool: return model.tap_node(row, column))
+
+
+# The foreman's next demonstration step, shown like a tap on its socket.
+func _advance_demo() -> bool:
+	var steps: int = model.demo_steps().size()
+	if model.demo_step < steps:
+		var node := int(model.demo_steps()[model.demo_step].node)
+		if not _changing(node, func() -> bool: return model.advance_demo()):
+			return false
+		_tap_node_index = node
+		_tap_age = 0.0
+		_demo_age = 0.0
+		return true
+	return model.advance_demo()
+
+
+# Runs a change of one socket and remembers which floors it turned dark or lit.
+func _changing(node: int, action: Callable) -> bool:
 	var before := {Tutorial.RED: model.lit_red_checks(), Tutorial.BLUE: model.lit_blue_checks()}
-	var code := int(model.corrections[node]) if row >= 0 and row < size and column >= 0 and column < size else 0
-	if not model.tap_node(row, column):
+	var code := int(model.corrections[node])
+	if not action.call():
 		return false
 	var changed := code ^ int(model.corrections[node])
 	_darkened.clear()
@@ -409,6 +438,7 @@ func _show_title() -> void:
 
 
 func _settle_animations() -> void:
+	_demo_age = SETTLED
 	_tap_age = SETTLED
 	_talk_age = SETTLED
 	_success_age = SETTLED
@@ -454,6 +484,7 @@ func _draw() -> void:
 		"leak_age": _leak_age, "routes": _leak_routes,
 		"counting": _count_age if _counting() else -1.0,
 		"spoken": _spoken(semantic_state()), "detail": _detail_age if _detailing() else -1.0,
+		"demo_node": model.demo_node(), "demo_age": _demo_age, "demo_more": model.demo_active() and model.demo_step <= model.demo_steps().size(),
 		"detail_offered": _detail_available() and not _detailing(),
 		"change": {"node": _change_node, "darkened": _darkened, "lit": _lit, "wires": _changed_wires, "age": _change_age} if _showing_change() else {},
 	})
@@ -582,6 +613,8 @@ func _announcement(state: Dictionary) -> String:
 		said = _readable(String(state.utterance.text)) + "くわしく：" + said
 	elif _detail_available():
 		said += "吹き出しをタップすると、くわしく見られるよ。"
+	elif model.demo_active() and model.demo_step <= model.demo_steps().size():
+		said += "吹き出しをタップすると、親方が続けるよ。"
 	return "タイトル画面" if at_title else "レッスン %d / %d。親方「%s」。%s" % [
 		state.stage, state.stage_count, said, _button_announcement(state)]
 

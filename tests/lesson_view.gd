@@ -79,6 +79,7 @@ func _test_button_announcement(view) -> void:
 		view.model.boundary_phase = phase
 		view.model.finished = false
 		view.model._reset_stage()
+		view.model.play_demo()
 		view.model._record("next_stage", {})
 		view._navigation_guard_until = 0
 		view._publish_semantics()
@@ -163,11 +164,13 @@ func _test_leak_without_counting() -> void:
 		_expect(not rings.is_empty() and not route.is_empty(), "%s: the leftover rings and the leak route stay" % name)
 
 
+# A lesson's board; lesson 5 after its demonstration (the trap), then wired.
 func _at_lesson(stage: int, wiring := {}, inspect := true, phase := 0) -> Tutorial:
 	var model := Tutorial.new()
 	model.stage_index = stage
 	model.boundary_phase = phase
 	model._reset_stage()
+	model.play_demo()
 	_wire(model, wiring)
 	if inspect and model.can_call_foreman():
 		model.inspect_floor()
@@ -356,6 +359,7 @@ func _test_check_detail(view) -> void:
 		view.model.boundary_phase = 0
 		view.model.finished = false
 		view.model._reset_stage()
+		view.model.play_demo()
 		view.model._record("next_stage", {})
 		view._navigation_guard_until = 0
 		view._publish_semantics()
@@ -454,6 +458,78 @@ func _test_check_detail(view) -> void:
 	var blue_chain := preload("res://src/leak_feedback.gd").route(view.model.definition().blue_faces, view.model._residual_support(2), 3, false)
 	_expect(view.model.is_dark() and view.model.inspection.red_crossing and not view.model.inspection.blue_crossing and not blue_chain.is_empty(), "fixture: red leaks, blue has an edge-to-edge chain but is safe")
 	_expect(view._leak_routes.size() == 1 and int(view._leak_routes[0].component) == 1 and view.model.utterance().text == "あっ、まだ赤い電気が\n外へ抜けているよ！", "only red leaves and is named; blue's even chain does not")
+
+
+# Lesson 5's demonstration in the view: the bubble (with its 「▶」 cue) shows
+# the foreman's next step, his hand lands on the exact socket while the wire
+# and the floors change through the model, a board tap ends it, home keeps
+# it, rapid bubble taps each show exactly one step, and the words and
+# announcements follow the actual board.
+func _test_demonstration(view) -> void:
+	var reset := func() -> void:
+		view.model.stage_index = 4
+		view.model.boundary_phase = 0
+		view.model.finished = false
+		view.model._reset_stage()
+		view.model._record("next_stage", {})
+		view._navigation_guard_until = 0
+		view._publish_semantics()
+	var bubble := Lesson.px(Lesson.BUBBLE).get_center()
+	var frame := func() -> Dictionary:
+		return {"state": view.model.semantic_state(), "demo_node": view.model.demo_node(), "demo_age": view._demo_age,
+			"demo_more": view.model.demo_active() and view.model.demo_step <= view.model.demo_steps().size()}
+	view.reduced_motion = false
+	view._muted = true
+	reset.call()
+	var start := _render(view.model, _anim(0.0, false, frame.call()))
+	var cue_at := (Lesson.BUBBLE.end - Vector2(8, 7)) * Lesson.U
+	var cue := func(probe: Probe) -> bool:
+		return not _shapes(probe, Lesson.GOLD).filter(func(shape): return _bounds(shape).get_center().distance_to(cue_at) < 2.5 * Lesson.U).is_empty()
+	_expect(cue.call(start) and view._announcement(view.semantic_state()).contains("親方の直し方を見てみよう。吹き出しをタップすると、親方が続けるよ。"), "the start shows the 「▶」 cue and announces how to go on")
+	_expect(view.semantic_state().lit_red == [0, 1] and not view._detail_available(), "the board starts lit; no detail is offered")
+	view._handle_design_tap(bubble)
+	_expect(Array(view.model.corrections) == [0, 1, 0, 0, 0, 0, 0, 0, 0] and view._spoken(view.semantic_state()) == "まず、上に赤を置くよ。", "a bubble tap shows the first placement")
+	_expect(view._showing_change() and view._darkened.size() == 1 and view._change_node == 1, "the floor it darkens is shown like a tap on socket 1")
+	var placed := _render(view.model, _anim(0.0, false, frame.call()))
+	var hand := _shapes(placed, Lesson.SKIN).filter(func(shape): return _bounds(shape).get_center().distance_to(Lesson.socket_center(1) * Lesson.U) < 30.0 * Lesson.U)
+	_expect(not hand.is_empty() and hand.all(func(shape): return _bounds(shape).end.y <= (Lesson.socket_center(1).y + 1.0) * Lesson.U and absf(_bounds(shape).get_center().x - (Lesson.socket_center(1).x + 5.0) * Lesson.U) < 6.0 * Lesson.U), "his hand comes down onto socket 1")
+	view._process(Lesson.DEMO_POINT_TIME + 0.1)
+	_expect(_shapes(_render(view.model, _anim(0.0, false, frame.call())), Lesson.SKIN).filter(func(shape): return _bounds(shape).get_center().distance_to(Lesson.socket_center(1) * Lesson.U) < 30.0 * Lesson.U).is_empty(), "then the hand leaves")
+	# Rapid bubble taps: exactly one step each, never more.
+	view._handle_design_tap(bubble)
+	view._handle_design_tap(bubble)
+	_expect(view.model.demo_step == 3 and Array(view.model.corrections) == [0, 1, 0, 0, 0, 0, 0, 1, 0] and view.model.is_dark(), "two quick taps: the bottom placement, then the dark line")
+	var trace_size: int = view.model.trace.size()
+	view._handle_design_tap(bubble)
+	_expect(view.model.demo_step == 3 and view.model.trace.size() == trace_size and view._spoken(view.semantic_state()) == "ちらつきは消えたね。\nこれで安全かな？", "a further tap changes nothing")
+	_expect(not cue.call(_render(view.model, _anim(0.0, false, frame.call()))) and not view._announcement(view.semantic_state()).contains("親方が続けるよ") and view._announcement(view.semantic_state()).ends_with("チェックして！ を押せる"), "no cue once he has finished; the check is offered")
+	# Home keeps the board and the step.
+	view._show_title()
+	view._open_tutorial()
+	view._navigation_guard_until = 0
+	_expect(view.model.demo_step == 3 and Array(view.model.corrections) == [0, 1, 0, 0, 0, 0, 0, 1, 0], "home and resume keep the demonstrated board")
+	# The check: the real leak.
+	view._handle_design_tap(View.PRIMARY_RECT.get_center())
+	view._publish_semantics()
+	view._process(View.COUNT_TIME + 0.05)
+	view._publish_semantics()
+	_expect(view._leak_routes.size() == 1 and view._leak_routes[0].qubits == [1, 4, 7] and not view.model.demo_active(), "the check shows the actual red leaving along 1-4-7")
+	# A board tap during the demonstration ends it; the bubble then does nothing to the board.
+	reset.call()
+	view._handle_design_tap(bubble)
+	view._handle_design_tap(Lesson.socket_center(4) * 2.0)
+	view._publish_semantics()
+	var after := Array(view.model.corrections)
+	view._handle_design_tap(bubble)
+	_expect(not view.model.demo_active() and Array(view.model.corrections) == after and after == [0, 1, 0, 0, 1, 0, 0, 0, 0], "a board tap ends the demonstration; no later placement")
+	_expect(view._spoken(view.semantic_state()) == "光る床がある。\nまず全部暗くしよう。" and not view._announcement(view.semantic_state()).contains("親方が続けるよ"), "the words follow the actual board")
+	# Reduced motion: the hand rests on the socket, the same steps.
+	view.reduced_motion = true
+	reset.call()
+	view._handle_design_tap(bubble)
+	var still: Dictionary = frame.call()
+	_expect(str(_render(view.model, _anim(0.0, true, still)).log) == str(_render(view.model, _anim(0.4, true, still)).log), "reduced motion draws the placement still")
+	view.reduced_motion = false
 
 
 # Every call-mode lesson's bottom button reads 「チェックして！」 (disabled on a
@@ -674,6 +750,7 @@ func _boards() -> Array[Tutorial]:
 	var leak := Tutorial.new()
 	leak.stage_index = 4
 	leak._reset_stage()
+	leak.play_demo()
 	leak.inspect_floor()
 	boards.append(leak)
 	var both := Tutorial.new()
@@ -869,6 +946,7 @@ func _test_wiring_change(view) -> void:
 		view.model.stage_index = stage
 		view.model.boundary_phase = phase
 		view.model._reset_stage()
+		view.model.play_demo()
 		view.model._record("next_stage", {})
 		view._navigation_guard_until = 0
 		view._publish_semantics()
@@ -1112,6 +1190,7 @@ func _test_counting(view) -> void:
 	view.reduced_motion = false
 	view.model.stage_index = 4
 	view.model._reset_stage()
+	view.model.play_demo()
 	view.model._record("next_stage", {})
 	view._publish_semantics()
 	view._handle_design_tap(View.PRIMARY_RECT.get_center())
@@ -1131,6 +1210,7 @@ func _test_lesson1_bell(view) -> void:
 		view.model.stage_index = stage
 		view.model.boundary_phase = 0
 		view.model._reset_stage()
+		view.model.play_demo()
 		view.model._record("next_stage", {})
 		view._navigation_guard_until = 0
 		view._publish_semantics()
@@ -1227,6 +1307,7 @@ func _run() -> void:
 	view.reduced_motion = false
 	view.model.stage_index = 4
 	view.model._reset_stage()
+	view.model.play_demo()
 	view.model._record("next_stage", {})
 	view._publish_semantics()
 	view._handle_design_tap(View.PRIMARY_RECT.get_center())
@@ -1251,6 +1332,7 @@ func _run() -> void:
 	_test_lesson1_bell(view)
 	_test_button_announcement(view)
 	_test_check_detail(view)
+	_test_demonstration(view)
 	# The audio server drops stopped playbacks (and their streams) on its own
 	# mixing thread. After this long synchronous run the next frames advance
 	# game time faster than real time, so a fixed timer could end first and

@@ -100,6 +100,9 @@ const DETAIL_LIFT := 0.35
 const DETAIL_PAIR := 0.6
 const DETAIL_DONE := 3.6
 const CHECK_WINDOW_Y := 294.0
+# The foreman's pointing hand on a demonstration socket (seconds).
+const DEMO_POINT_TIME := 1.4
+const SETTLE_DEMO := 10.0
 # The lit warning lamp's four diagonal rays (units from its centre): outside
 # its 14-unit chamfered body, and short enough to stay clear of the windows.
 const LAMP_RAYS := [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]
@@ -209,6 +212,8 @@ func draw(target, model, anim: Dictionary) -> void:
 	_bubble(BUBBLE, String(utterance.text), ink)
 	if bool(anim.get("detail_offered", false)):
 		_detail_hint(BUBBLE)
+	elif bool(anim.get("demo_more", false)):
+		_next_hint(BUBBLE, float(anim.time), reduced)
 	_board(model, state, anim)
 	if float(anim.get("detail", -1.0)) >= 0.0:
 		_check_windows(model, float(anim.detail), reduced)
@@ -344,6 +349,8 @@ func _board(model, state: Dictionary, anim: Dictionary) -> void:
 		if glow > 0.0 and node == int(change.node):
 			for wire in change.wires:
 				_wire_glow(socket_center(node) + Vector2(0, 1.0 if pressed else 0.0), int(wire.component), bool(wire.present), glow)
+	if int(anim.get("demo_node", -1)) >= 0 and float(anim.get("demo_age", SETTLE_DEMO)) < DEMO_POINT_TIME:
+		_pointer(socket_center(int(anim.demo_node)), float(anim.demo_age), reduced)
 	if leak and model.counts_pairs() and age >= 0.0:
 		_leaving_light(model, routes, age)
 	if happy and model.counts_pairs():
@@ -686,6 +693,32 @@ func _safe_check() -> void:
 	var center := Vector2(c8.x + 18, c0.y - 38)
 	_plate(center.x - 8, center.y - 8, 16, 16, 5, MINT)
 	_stroke(PackedVector2Array([center + Vector2(-4, 0), center + Vector2(-1, 3), center + Vector2(5, -3)]), INK, 2.0)
+
+
+# During the foreman's demonstration: a small 「▶」 on the bubble (a tap shows
+# his next step), gently pulsing.
+func _next_hint(rect: Rect2, now: float, reduced: bool) -> void:
+	var lift := 0.0 if reduced else (1.0 if int(now / 0.5) % 2 else 0.0)
+	var center := Vector2(rect.end.x - 8, rect.end.y - 7 - lift)
+	_plate(center.x - 6, center.y - 6, 12, 12, 3, GOLD)
+	_poly(PackedVector2Array([center + Vector2(-2, -4), center + Vector2(2, 0), center + Vector2(-2, 4)]), INK)
+
+
+# The foreman's hand placing a demonstration wire: a pointing hand comes down
+# onto the socket's top edge (0.25 s), presses, and stays a moment; reduced
+# motion draws it resting on the socket.
+func _pointer(center: Vector2, age: float, reduced: bool) -> void:
+	var drop := 0.0 if reduced else 8.0 * (1.0 - clampf(age / 0.25, 0.0, 1.0))
+	var fade := 1.0 if reduced else clampf((DEMO_POINT_TIME - age) / 0.3, 0.0, 1.0)
+	var tip := center + Vector2(5, -9 - drop)
+	var ring := _oct_points(center.x - 16, center.y - 16, 32, 32, 10)
+	ring.append(ring[0])
+	_stroke(ring, Color(GOLD, fade), 2.0)
+	# Finger pointing down (a chamfered bar), then the hand above it.
+	_plate(tip.x - 3, tip.y - 13, 7, 15, 3, Color(SKIN, fade), Color(INK, fade))
+	_plate(tip.x - 7, tip.y - 24, 17, 14, 4, Color(SKIN, fade), Color(INK, fade))
+	_rect(tip.x - 4, tip.y - 21, 1, 8, Color(SKIN_LO, fade))
+	_rect(tip.x + 1, tip.y - 21, 1, 8, Color(SKIN_LO, fade))
 
 
 # A small 「？」 on the bubble: a tap there opens the detailed check.

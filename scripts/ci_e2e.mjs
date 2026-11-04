@@ -179,7 +179,16 @@ try {
   await bottom();
 
   await captureState("stage5-start");
-  await assertState("state.floor_dark && state.can_call_foreman && !state.fault_revealed", "stage5 trap looks cleared and hides its fault");
+  await assertState("!state.floor_dark && state.lit_red.join() === '0,1' && state.corrections.every((value) => value === 0) && state.demo_active && !state.can_call_foreman && state.utterance.text === 'ちらついているね。\\n親方の直し方を見てみよう。'", "stage5 starts from its fault alone and invites to watch the foreman");
+  // The foreman's demonstration, one bubble tap per step.
+  await clickCanvas(256, 166);
+  await assertState("state.corrections.join() === '0,1,0,0,0,0,0,0,0' && state.lit_red.join() === '1' && state.utterance.text === 'まず、上に赤を置くよ。'", "he places red on the top socket first");
+  await captureState("stage5-demo-top", 300);
+  await clickCanvas(256, 166);
+  await assertState("state.corrections.join() === '0,1,0,0,0,0,0,1,0' && state.floor_dark && state.utterance.text === '次は、下に赤を置くよ。'", "then on the bottom socket: dark");
+  await clickCanvas(256, 166);
+  await assertState("state.demo_active && state.can_call_foreman && state.utterance.text === 'ちらつきは消えたね。\\nこれで安全かな？'", "then he asks whether it is safe");
+  await captureState("stage5-demo-dark");
   await bottom();
   await assertState(
     "state.inspection.red_crossing && !state.inspection.blue_crossing && !state.passed && !state.can_continue && !state.fault_revealed",
@@ -284,10 +293,9 @@ try {
   await bottom();
   await page.waitForTimeout(1800); // the foreman counts
   await bottom();
-  await bottom();
-  await box(1, 3);
-  await box(7, 3);
+  // Lesson 5 repaired at once, without watching the demonstration.
   await box(4);
+  await assertState("state.floor_dark && !state.demo_active", "a direct repair ends the demonstration");
   await bottom();
   await page.waitForFunction(() => !window.discoBreakerState.counting, null, { timeout: 5000 }); // lesson 5 checks for 1.0 s
   await bottom();

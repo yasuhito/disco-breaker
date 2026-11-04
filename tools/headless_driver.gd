@@ -16,8 +16,9 @@ func _init() -> void:
 	quit(0 if model.finished else 1)
 
 
-# Every lesson through the public commands. Lesson 5 is first inspected as
-# the untouched trap (a leak, not a pass), then repaired and inspected again.
+# Every lesson through the public commands. Lesson 5 first plays the
+# foreman's demonstration, is inspected as the trap he leaves (a leak, not a
+# pass), then repaired and inspected again.
 func _solve_all(model: Tutorial) -> void:
 	model.tap_node(1, 1)
 	model.next_stage()
@@ -29,6 +30,7 @@ func _solve_all(model: Tutorial) -> void:
 	model.next_stage()
 	model.inspect_floor()
 	model.next_stage()
+	model.play_demo()
 	model.inspect_floor()
 	for tap in 3:
 		model.tap_node(0, 1)

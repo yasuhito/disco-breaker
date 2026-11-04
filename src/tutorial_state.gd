@@ -44,6 +44,10 @@ var touched := false
 # Inspections on this floor that reported a leak (lesson 5 keeps the
 # original-fault reveal for the repair once one has).
 var leak_count := 0
+# The lesson's demonstration: how many of its steps have been shown (its
+# placements, then its closing line), and whether the player has taken over.
+var demo_step := 0
+var demo_over := false
 var leak_seen: bool:
 	get:
 		return leak_count > 0
@@ -103,9 +107,15 @@ func _build_stages() -> Array[Dictionary]:
 		# colours first, the other colour too whenever it has leftovers).
 		{
 			"id": "crossing_trap", "title": "暗いのに安全じゃない？", "size": 3, "inspect": "call",
-			"hidden": {4: RED}, "preset": {1: RED, 7: RED}, "target": -1,
+			"hidden": {4: RED}, "preset": {}, "target": -1,
 			"call_label": "チェックして！", "counts_pairs": true, "focus": [RED],
-			"lines": {"open": "ちらつきは消えたね。\nちゃんと直ったかな？",
+			# The foreman's demonstration: from the fault alone he places red on
+			# the top, then the bottom socket, one bubble tap each (the same
+			# corrections a tap makes); a last tap says the floor is dark. Any
+			# tap on the board or a check ends it and keeps the actual board.
+			"demo": [{"node": 1, "line": "まず、上に赤を置くよ。"}, {"node": 7, "line": "次は、下に赤を置くよ。"}],
+			"lines": {"open": "ちらついているね。\n親方の直し方を見てみよう。",
+				"demo_done": "ちらつきは消えたね。\nこれで安全かな？",
 				"lit": "光る床がある。\nまず全部暗くしよう。",
 				"dark": "暗くなったね。\nチェックしよう！", "dark_seen": "暗くなったね。\nもう一度チェックしよう！",
 				# Spoken while the foreman checks after being called (the view's presentation).
@@ -200,6 +210,8 @@ func tap_node(row: int, column: int) -> bool:
 	var node := row * size + column
 	corrections[node] = (corrections[node] + 1) % 4
 	touched = true
+	# The player takes over from the demonstration, from the actual board.
+	demo_over = true
 	inspection = {}
 	_record("tap_node", {"row": row, "column": column, "state": corrections[node]})
 	if auto_inspects() and is_dark():
@@ -218,6 +230,7 @@ func inspect_floor() -> Dictionary:
 
 
 func _inspect(automatic: bool) -> Dictionary:
+	demo_over = true
 	inspection = _inspect_residual()
 	if not bool(inspection.safe):
 		leak_count += 1
@@ -323,6 +336,10 @@ func utterance() -> Dictionary:
 		return {"kind": "safe", "text": lines.ok}
 	if not inspection.is_empty():
 		return {"kind": "unsafe", "text": _leak_line()}
+	if demo_active() and demo_step > 0:
+		if demo_step > demo_steps().size():
+			return {"kind": "demo", "text": String(lines.demo_done)}
+		return {"kind": "demo", "text": String(demo_steps()[demo_step - 1].line)}
 	if not touched:
 		return {"kind": "start", "text": lines.open}
 	if not is_dark():
@@ -385,6 +402,46 @@ func detail_result() -> String:
 	if left.is_empty():
 		return DETAIL_ALL_GONE
 	return String(DETAIL_LEFT["both" if left.size() == 2 else ("red" if left[0] == RED else "blue")])
+
+
+func demo_steps() -> Array:
+	return definition().get("demo", [])
+
+
+# The demonstration (its last line included) is shown until the player taps
+# the board or checks.
+func demo_active() -> bool:
+	return not finished and not demo_steps().is_empty() and not demo_over
+
+
+# The next step of the demonstration: the foreman places the next wire (a
+# real correction of the board, recorded as his), or after the last wire
+# says the floor is dark. False when there is nothing left to show.
+func advance_demo() -> bool:
+	if not demo_active() or demo_step >= demo_steps().size() + 1:
+		return false
+	if demo_step < demo_steps().size():
+		var node := int(demo_steps()[demo_step].node)
+		corrections[node] = RED
+		demo_step += 1
+		_record("demo_place", {"node": node, "state": corrections[node]})
+	else:
+		demo_step += 1
+		_record("demo_next", {})
+	return true
+
+
+# The socket the demonstration placed last, or -1.
+func demo_node() -> int:
+	if not demo_active() or demo_step == 0 or demo_step > demo_steps().size():
+		return -1
+	return int(demo_steps()[demo_step - 1].node)
+
+
+# Runs the whole demonstration (tests and headless runs).
+func play_demo() -> void:
+	while advance_demo():
+		pass
 
 
 func counts_pairs() -> bool:
@@ -450,6 +507,8 @@ func semantic_state() -> Dictionary:
 		"can_continue": can_continue(),
 		"fault_revealed": fault_revealed(),
 		"leak_seen": leak_seen,
+		"demo_active": demo_active(),
+		"demo_step": demo_step,
 		"utterance": utterance(),
 		"progress": progress(),
 		"action_count": trace.size(),
@@ -473,6 +532,8 @@ func _reset_stage() -> void:
 	inspection = {}
 	touched = false
 	leak_count = 0
+	demo_step = 0
+	demo_over = false
 
 
 func _lit_checks(component: int) -> Array[int]:

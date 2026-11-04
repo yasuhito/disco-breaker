@@ -28,6 +28,7 @@ func _init() -> void:
 	_test_allowed_actions()
 	_test_edit_after_pass_invalidates()
 	_test_independent_crossing_parity()
+	_test_demonstration()
 	_test_crossing_trap_observe_then_repair()
 	_test_crossing_trap_alternatives()
 	_test_crossing_trap_fixed_before_inspection()
@@ -58,7 +59,7 @@ func _init() -> void:
 	_test_electrical_sounds()
 	_test_color_families_and_wire_directions()
 	if failures.is_empty():
-		print("PASS: 34 tutorial tests")
+		print("PASS: 35 tutorial tests")
 		quit(0)
 	else:
 		for failure in failures:
@@ -71,11 +72,13 @@ func _expect(condition: bool, message: String) -> void:
 		failures.append(message)
 
 
+# A lesson's start; lesson 5 after its demonstration (the trap board).
 func _at(stage: int, phase := 0) -> Tutorial:
 	var model := Tutorial.new()
 	model.stage_index = stage
 	model.boundary_phase = phase
 	model._reset_stage()
+	model.play_demo()
 	return model
 
 
@@ -169,10 +172,60 @@ func _test_independent_crossing_parity() -> void:
 	_expect(red.red_witness == [0, 4, 8], "witness should explain computed odd red class")
 
 
+# Lesson 5 starts from its original fault alone (centre red, two red floors
+# lit, no wires). The foreman's demonstration then places red on the top
+# socket, then the bottom one, a bubble tap each, as real corrections; the
+# floors follow the same model; a last step says the floor is dark. Any tap
+# or check ends it on the actual board, without later placements.
+func _test_demonstration() -> void:
+	var model := Tutorial.new()
+	model.stage_index = 4
+	model._reset_stage()
+	_expect(Array(model.corrections) == [0, 0, 0, 0, 0, 0, 0, 0, 0] and model.lit_red_checks() == [0, 1] and model.lit_blue_checks().is_empty(), "lesson 5 starts with only its fault: no wires, two red floors lit")
+	_expect(model.demo_active() and model.demo_step == 0 and not model.can_call_foreman() and model.utterance() == {"kind": "start", "text": "ちらついているね。\n親方の直し方を見てみよう。"}, "it opens by inviting to watch the foreman, the check not yet possible")
+	_expect(model.advance_demo() and Array(model.corrections) == [0, 1, 0, 0, 0, 0, 0, 0, 0] and model.lit_red_checks() == [1] and model.demo_node() == 1, "first he places red on the top socket: the top-left floor goes dark")
+	_expect(model.utterance() == {"kind": "demo", "text": "まず、上に赤を置くよ。"} and model.trace[-1].action == "demo_place" and not model.touched, "he says so, and it is recorded as his, not the player's")
+	_expect(model.advance_demo() and Array(model.corrections) == [0, 1, 0, 0, 0, 0, 0, 1, 0] and model.is_dark() and model.demo_node() == 7, "then red on the bottom socket: every floor is dark")
+	_expect(model.utterance() == {"kind": "demo", "text": "次は、下に赤を置くよ。"} and model.can_call_foreman(), "he says so; the check is now possible")
+	_expect(model.advance_demo() and model.utterance() == {"kind": "demo", "text": "ちらつきは消えたね。\nこれで安全かな？"} and model.demo_node() == -1, "then the floor is dark and he asks whether it is safe")
+	_expect(not model.advance_demo() and model.demo_active(), "nothing more to show; the last line stays")
+	var verdict := model.inspect_floor()
+	_expect(not bool(verdict.safe) and bool(verdict.red_crossing) and not model.demo_active() and model.utterance().text == "あっ、まだ赤い電気が\n外へ抜けているよ！", "the check finds the real leak and ends the demonstration")
+	_expect(Array(model._residual_support(Tutorial.RED)) == [1, 4, 7] and model.cut_marks(Tutorial.RED) == [1], "the leaving red is the actual leftover 1-4-7")
+	# A tap at any step ends it on the actual board; nothing is placed later.
+	for step in 4:
+		var cut := Tutorial.new()
+		cut.stage_index = 4
+		cut._reset_stage()
+		for i in step:
+			cut.advance_demo()
+		var before := Array(cut.corrections)
+		cut.tap_node(2, 2)
+		before[8] = 1
+		_expect(not cut.demo_active() and Array(cut.corrections) == before, "step %d: a tap ends the demonstration and keeps the actual board" % step)
+		_expect(not cut.advance_demo() and Array(cut.corrections) == before and cut.utterance().kind in ["mistake", "ready"], "step %d: no later placement, and the words follow the board" % step)
+	# Repairing at once (centre red) is not gated: dark, then a safe check.
+	var direct := Tutorial.new()
+	direct.stage_index = 4
+	direct._reset_stage()
+	direct.tap_node(1, 1)
+	_expect(direct.is_dark() and not direct.demo_active() and direct.inspect_floor().safe and direct.can_continue(), "the player may repair at once without watching")
+	# Replay restarts it; other lessons have none.
+	model.restart()
+	model.stage_index = 4
+	model._reset_stage()
+	_expect(model.demo_active() and model.demo_step == 0 and Array(model.corrections) == [0, 0, 0, 0, 0, 0, 0, 0, 0], "a reset lesson starts the demonstration again")
+	for stage in [0, 1, 2, 3, 5, 6]:
+		var other := Tutorial.new()
+		other.stage_index = stage
+		other._reset_stage()
+		_expect(not other.demo_active() and not other.advance_demo(), "lesson %d has no demonstration" % (stage + 1))
+
+
 func _test_crossing_trap_observe_then_repair() -> void:
 	var model := _at(4)
 	_expect(model.is_dark() and model.can_call_foreman() and not model.fault_revealed(), "the trap looks cleared and hides its fault before inspection")
-	_expect(model.utterance().text == "ちらつきは消えたね。\nちゃんと直ったかな？" and String(model.definition().title) == "暗いのに安全じゃない？", "the trap opens by asking whether a dark floor is safe")
+	_expect(model.utterance().text == "ちらつきは消えたね。\nこれで安全かな？" and String(model.definition().title) == "暗いのに安全じゃない？", "after the demonstration the trap asks whether a dark floor is safe")
 	var verdict := model.inspect_floor()
 	_expect(verdict.red_crossing and not verdict.blue_crossing and not verdict.safe, "trap keeps its odd red class only")
 	_expect(not model.passed() and not model.can_continue() and not model.next_stage(), "the first inspection is a leak, not a pass")
@@ -313,6 +366,7 @@ func _test_full_flow_trace() -> void:
 	progress.append(model.progress())
 	model.inspect_floor()
 	model.next_stage()
+	model.play_demo()
 	model.inspect_floor()
 	_wire(model, {4: Tutorial.RED})
 	model.inspect_floor()
@@ -713,6 +767,7 @@ func _test_reward_events() -> void:
 	model.inspect_floor()
 	_expect(rewards.observe(model.semantic_state()) == "success", "explicit safe inspection celebrates")
 	model.next_stage()
+	model.play_demo()
 	rewards.observe(model.semantic_state())
 	model.inspect_floor()
 	_expect(rewards.observe(model.semantic_state()).is_empty() and rewards.success_count == 4, "the trap's leak never celebrates")
@@ -850,6 +905,7 @@ func _test_leak_events() -> void:
 	_expect(leaks.observe(model.semantic_state()).is_empty() and not leaks.active, "safe clear never discharges")
 	model.stage_index = 4
 	model._reset_stage()
+	model.play_demo()
 	model._record("test_floor", {})
 	leaks.observe(model.semantic_state())
 	_expect(not leaks.active, "dark floor before inspection never reveals error")
