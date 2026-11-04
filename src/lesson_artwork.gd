@@ -96,6 +96,7 @@ const DETAIL_FLY_STEP := 0.3
 const DETAIL_FLY := 0.6
 const DETAIL_PAIR := 0.4
 const DETAIL_DONE := 3.6
+const CHECK_WINDOW_Y := 294.0
 # A wiring tap's floor outlines and wire glow (the view's CHANGE_TIME): full
 # for the first part, then one smooth fade; reduced motion holds it unfaded.
 const CHANGE_HOLD := 0.15
@@ -703,7 +704,8 @@ func _check_windows(model, age: float, reduced: bool) -> void:
 		var marks: Array[int] = model.cut_marks(component)
 		var plan := detail_plan(marks.size(), age)
 		var x := left + index * (width + 6.0)
-		var y := 284.0
+		# Below the red lamp (it sits up to 7 units under the board's edge + 14).
+		var y := CHECK_WINDOW_Y
 		var border: Color = RED_HI if plan.warning else (MINT if plan.green else f.lo)
 		_plate(x, y, width, 26, 4, NIGHT2, border)
 		# The inspection line this window counts: a short dashed stub.

@@ -229,6 +229,8 @@ func _test_visual_check() -> void:
 	var c0 := Lesson.socket_center(0)
 	var c8 := Lesson.socket_center(8)
 	_expect(lamp.y > c8.y + 30 and lamp.x - 10 > 0 and lamp.x + 10 < 195, "the red lamp is outside the board, on the screen")
+	_expect(lamp.y + 7.0 + 1.0 <= Lesson.CHECK_WINDOW_Y, "the red lamp stays clear of the detailed check's windows")
+	_expect(Lesson.CHECK_WINDOW_Y + 26.0 + 1.0 <= Lesson.SECONDARY.position.y, "the windows stay clear of the skip button")
 	_expect(not lit.texts.any(func(text): return text.contains("こ") or text.contains("漏電")), "no counts and no 「漏電」 on the board")
 	var still := _check_board(trap, 0.0, true)
 	_expect(still.lamps[1] and _sorted(still.rings[1]) == [1, 4, 7] and still.trails[1] > 0, "reduced motion draws the final frame at once")
