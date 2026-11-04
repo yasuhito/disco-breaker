@@ -172,7 +172,7 @@ func _test_independent_crossing_parity() -> void:
 func _test_crossing_trap_observe_then_repair() -> void:
 	var model := _at(4)
 	_expect(model.is_dark() and model.can_call_foreman() and not model.fault_revealed(), "the trap looks cleared and hides its fault before inspection")
-	_expect(model.utterance().text == "ちらつきは全部消えてるね。\nでも、これで安全かな？" and String(model.definition().title) == "暗いのに、安全じゃない？", "the trap opens by asking whether a dark floor is safe")
+	_expect(model.utterance().text == "ちらつきは全部消えてるね。\nでも、これで安全かな？" and String(model.definition().title) == "暗いのに安全じゃない？", "the trap opens by asking whether a dark floor is safe")
 	var verdict := model.inspect_floor()
 	_expect(verdict.red_crossing and not verdict.blue_crossing and not verdict.safe, "trap keeps its odd red class only")
 	_expect(not model.passed() and not model.can_continue() and not model.next_stage(), "the first inspection is a leak, not a pass")
@@ -226,7 +226,15 @@ func _test_crossing_trap_alternatives() -> void:
 	again.tap_node(0, 0)
 	for tap in 3:
 		again.tap_node(0, 0)
-	_expect(not again.inspect_floor().safe and again.utterance().text == "まだ電気がもれているよ。\nあまった印が\nなくなるように直そう。", "a second leak says it is still leaking")
+	# 「まだ」 depends on the explanation having been shown, not on the count of
+	# checks: a leak checked again before the explanation still gets the trap's hint.
+	_expect(not again.inspect_floor().safe and again.leak_count == 2 and again.utterance().text == "あまりがあると危ないよ。\n上と下を外して、\n真ん中に赤を置こう！", "a repeated leak before any explanation still gets the trap's own hint")
+	again.mark_leak_explained()
+	_expect(again.utterance().text == "まだ電気がもれているよ。\nあまった印が\nなくなるように直そう。", "after the explanation was shown, a leak says it is still leaking")
+	again.next_stage()
+	_expect(again.stage_index == 4 and again.leak_explained, "a leak keeps the lesson (and its shown explanation)")
+	var fresh := _at(4)
+	_expect(not fresh.leak_explained and not fresh.semantic_state().leak_explained, "a fresh lesson 5 has not shown its explanation")
 
 
 # Lessons 5-7 count each colour's leftovers on its inspection line. Over many
@@ -484,10 +492,7 @@ func _test_foreman_copy_fits_bubble() -> void:
 		var titled := Tutorial.new()
 		titled.boundary_phase = phase
 		for stage in titled.stages():
-			# Lesson 5's approved title is 361 px: inside the 390 px screen with a
-			# 13 px right margin; it alone may use up to a 12 px margin.
-			var title_limit := 362.0 if String(stage.title) == "暗いのに、安全じゃない？" else 358.0
-			_expect(bold.get_string_size(String(stage.title), HORIZONTAL_ALIGNMENT_LEFT, -1, 30).x <= title_limit, "lesson title is wider than the screen: %s" % stage.title)
+			_expect(bold.get_string_size(String(stage.title), HORIZONTAL_ALIGNMENT_LEFT, -1, 30).x <= 358.0, "lesson title is wider than the screen: %s" % stage.title)
 			for character in String(stage.title):
 				_expect(regular.has_char(character.unicode_at(0)), "bundled font lacks title glyph: %s" % character)
 	# Each lesson's call button label (Bold 30 px, centred) keeps 16 px each

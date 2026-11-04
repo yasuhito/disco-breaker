@@ -37,6 +37,9 @@ var touched := false
 # Inspections on this floor that reported a leak (lesson 5 keeps the
 # original-fault reveal for the repair once one has).
 var leak_count := 0
+# The view has shown this lesson's leak explanation up to its count (a
+# presentation fact, set only after the explanation; the verdict never waits).
+var leak_explained := false
 var leak_seen: bool:
 	get:
 		return leak_count > 0
@@ -93,7 +96,7 @@ func _build_stages() -> Array[Dictionary]:
 		# top row, blue on the left column ("focus" colours first, the other
 		# colour too whenever it has leftovers).
 		{
-			"id": "crossing_trap", "title": "暗いのに、安全じゃない？", "size": 3, "inspect": "call",
+			"id": "crossing_trap", "title": "暗いのに安全じゃない？", "size": 3, "inspect": "call",
 			"hidden": {4: RED}, "preset": {1: RED, 7: RED}, "target": -1,
 			"call_label": "チェックして！", "counts_pairs": true, "focus": [RED],
 			"lines": {"open": "ちらつきは全部消えてるね。\nでも、これで安全かな？",
@@ -103,6 +106,8 @@ func _build_stages() -> Array[Dictionary]:
 				"call": "電気がもれていないか、\nチェックするよ！",
 				# The step-by-step explanation of the first leak (the view's presentation).
 				"steps": ["電気がもれているよ！\n破線は、元の故障だよ。", "同じ場所の同じ色は、\n打ち消し合って消えるよ。", "打ち消されずに残った所に\n印をつけたよ。"],
+				# The cancelling step on a board where nothing cancels yet.
+				"steps_no_cancel": "同じ場所に同じ色を置くと、\n打ち消せるよ。\nこの盤面には、まだないね。",
 				# Only the untouched trap is repaired by exactly this.
 				"unsafe_preset": "あまりがあると危ないよ。\n上と下を外して、\n真ん中に赤を置こう！",
 				"unsafe": "あまりがあると危ないよ。\nあまった印が\nなくなるように直そう。",
@@ -334,10 +339,11 @@ func _leak_line() -> String:
 	if counts_pairs():
 		var lines: Dictionary = d.lines
 		if lines.has("unsafe_preset"):
-			# Lesson 5: the explanation's last word; its count was the step before.
-			if leak_count == 1 and _matches(d.preset):
-				return String(lines.unsafe_preset)
-			return String(lines.unsafe_again if leak_count > 1 else lines.unsafe)
+			# Lesson 5: the explanation's last word; its count was the step
+			# before. 「まだ」 only once the explanation has really been shown.
+			if leak_explained:
+				return String(lines.unsafe_again)
+			return String(lines.unsafe_preset if _matches(d.preset) else lines.unsafe)
 		return String(lines.unsafe) + "\n" + count_summary()
 	var red := bool(inspection.get("red_crossing", false))
 	var blue := bool(inspection.get("blue_crossing", false))
@@ -376,6 +382,20 @@ func _lit_line() -> String:
 			if others_clean and at_target in [RED, BLUE]:
 				return LIT_HINTS.combined_three_taps
 	return LIT_GENERIC
+
+
+func mark_leak_explained() -> void:
+	leak_explained = true
+
+
+# Sockets where a wire matches the original fault in a colour (they cancel).
+func cancelled_sockets() -> Array[int]:
+	var result: Array[int] = []
+	var hidden: Dictionary = definition().hidden
+	for node in corrections.size():
+		if int(hidden.get(node, EMPTY)) & corrections[node]:
+			result.append(node)
+	return result
 
 
 func counts_pairs() -> bool:
@@ -477,6 +497,7 @@ func semantic_state() -> Dictionary:
 		"can_continue": can_continue(),
 		"fault_revealed": fault_revealed(),
 		"leak_seen": leak_seen,
+		"leak_explained": leak_explained,
 		"utterance": utterance(),
 		"progress": progress(),
 		"action_count": trace.size(),
@@ -500,6 +521,7 @@ func _reset_stage() -> void:
 	inspection = {}
 	touched = false
 	leak_count = 0
+	leak_explained = false
 
 
 func _lit_checks(component: int) -> Array[int]:

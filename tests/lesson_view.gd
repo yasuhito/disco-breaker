@@ -288,7 +288,8 @@ func _test_explanation(view) -> void:
 	for step in 4:
 		view._process(View.EXPLAIN_STEP)
 		said.append(spoken.call())
-	_expect(said == [steps[0], steps[1], steps[2], "上の段の赤い印は1こ。\n組にならず、1こあまり。", "あまりがあると危ないよ。\n上と下を外して、\n真ん中に赤を置こう！"], "the steps: fault, cancelling, marks, the count, the trap's hint")
+	var full: Array[String] = [steps[0], "同じ場所に同じ色を置くと、\n打ち消せるよ。\nこの盤面には、まだないね。", steps[2], "上の段の赤い印は1こ。\n組にならず、1こあまり。", "あまりがあると危ないよ。\n上と下を外して、\n真ん中に赤を置こう！"]
+	_expect(said == full, "the steps: fault, cancelling (none on this board yet), marks, the count, the trap's hint")
 	view._process(View.EXPLAIN_STEP * 3)
 	_expect(spoken.call() == String(view.model.utterance().text) and view.semantic_state().explain_step == 4, "the last word stays")
 	# The bubble replays from the start, and moves on step by step.
@@ -309,6 +310,7 @@ func _test_explanation(view) -> void:
 	_expect(view.semantic_state().explain_step == -1 and view.model.utterance().kind == "mistake" and spoken.call() == String(view.model.utterance().text), "an edit ends the explanation; the hint follows the board")
 	view._handle_design_tap(bubble)
 	_expect(view.semantic_state().explain_step == -1, "the bubble does nothing without an explanation")
+	_expect(view.model.leak_explained, "an explanation shown to its count and ended by an edit counts as shown")
 	# A second leak: only the count and the hint.
 	for tap in 3:
 		view._handle_design_tap(Lesson.socket_center(0) * 2.0)
@@ -318,13 +320,68 @@ func _test_explanation(view) -> void:
 	_expect(view.semantic_state().explain_steps == 2 and spoken.call() == "上の段の赤い印は1こ。\n組にならず、1こあまり。", "a second leak repeats the count")
 	view._process(View.EXPLAIN_STEP)
 	_expect(spoken.call() == "まだ電気がもれているよ。\nあまった印が\nなくなるように直そう。", "then its hint")
+	# A check cut short by an edit before any explanation, the trap restored
+	# and checked again: the whole explanation, with the trap's own hint.
+	reset.call()
+	call.call()
+	view._process(0.4)
+	_expect(view.semantic_state().counting, "fixture: still checking")
+	view._handle_design_tap(Lesson.socket_center(1) * 2.0)
+	view._publish_semantics()
+	for tap in 3:
+		view._handle_design_tap(Lesson.socket_center(1) * 2.0)
+	view._publish_semantics()
+	_expect(view.model.can_call_foreman() and view.model.leak_count == 1 and not view.model.leak_explained, "the trap is back, the first leak was never explained")
+	call.call()
+	view._process(View.COUNT_TIME + 0.01)
+	var again_said: Array[String] = [spoken.call()]
+	for step in 4:
+		view._process(View.EXPLAIN_STEP)
+		again_said.append(spoken.call())
+	_expect(view.model.leak_count == 2 and view.semantic_state().explain_steps == 5 and again_said == full, "a check cancelled before its explanation gets the whole explanation next time")
+	_expect(spoken.call() == String(view.model.utterance().text) and not String(view.model.utterance().text).begins_with("まだ"), "and its last word is the trap's hint, not 「まだ」")
+	# An explanation ended before its count (here at the marks) is not shown either.
+	reset.call()
+	call.call()
+	view._process(View.COUNT_TIME + 0.01 + View.EXPLAIN_STEP * 2)
+	_expect(view.semantic_state().explain_step == 2, "fixture: at the marks step")
+	view._handle_design_tap(Lesson.socket_center(0) * 2.0)
+	view._publish_semantics()
+	for tap in 3:
+		view._handle_design_tap(Lesson.socket_center(0) * 2.0)
+	view._publish_semantics()
+	_expect(not view.model.leak_explained, "an explanation cut before its count is not marked as shown")
+	call.call()
+	view._process(View.COUNT_TIME + 0.01)
+	_expect(view.semantic_state().explain_steps == 5, "so the next leak explains everything again")
+	# Bubble taps to the count count as shown.
+	view._handle_design_tap(bubble)
+	view._handle_design_tap(bubble)
+	view._handle_design_tap(bubble)
+	_expect(view.semantic_state().explain_step == 3, "fixture: the bubble reached the count")
+	view._handle_design_tap(Lesson.socket_center(0) * 2.0)
+	view._publish_semantics()
+	_expect(view.model.leak_explained, "reaching the count by bubble taps counts as shown")
+	# A shown explanation never carries into the next lesson.
+	_expect(not Tutorial.new().leak_explained, "a new model starts unexplained")
+	# The repair cancels the fault: a 「0」 and no mark on the centre, then the real leftovers.
+	reset.call()
+	call.call()
+	view._process(View.COUNT_TIME + 0.01)
+	view._handle_design_tap(Lesson.socket_center(4) * 2.0)
+	view._publish_semantics()
+	var repaired := _marks(view.model)
+	_expect(view.model.cancelled_sockets() == [4] and repaired.zeros >= 1 and not repaired.plan.rings[1].has(4) and _sorted(repaired.plan.rings[1]) == [1, 7], "red on the centre cancels its fault: 「0」 there, marks left on 1 and 7")
+	# The live region reads prose lines on, and closes only count lines.
+	_expect(View._readable("まだ電気がもれているよ。\nあまった印が\nなくなるように直そう。") == "まだ電気がもれているよ。あまった印がなくなるように直そう。", "a sentence split over lines is read as one sentence")
+	_expect(View._readable("電気がもれているよ！\n赤：上の段 0こ→あまり0こ\n青：左の列 1こ→あまり1こ") == "電気がもれているよ！赤：上の段 0こ→あまり0こ。青：左の列 1こ→あまり1こ。", "two colours' counts are read apart")
 	# Reduced motion: no check delay, the same words in order.
 	view.reduced_motion = true
 	reset.call()
 	call.call()
 	_expect(not view.semantic_state().counting and spoken.call() == steps[0], "reduced motion starts the explanation at once")
 	view._process(View.EXPLAIN_STEP)
-	_expect(spoken.call() == steps[1], "and goes through the same steps")
+	_expect(spoken.call() == full[1], "and goes through the same steps")
 	view.reduced_motion = false
 	# A safe check is not explained step by step.
 	reset.call()

@@ -96,6 +96,10 @@ var _change_sequence := -1
 var _explain_sequence := -1
 var _explain_age := 0.0
 var _explain_steps: PackedStringArray = []
+# The current full explanation has been shown up to its count; recorded in
+# the model once a later action in the same lesson ends it.
+var _explain_reached := false
+var _explain_stage_id := ""
 # The title press has its own player, so nothing that stops lesson audio on
 # entry can cut it; only mute does.
 var _press_audio := AudioStreamPlayer.new()
@@ -155,6 +159,7 @@ func _process(delta: float) -> void:
 		var step := _explain_step()
 		_explain_age += delta
 		if _explain_step() != step:
+			_note_explain_progress()
 			_publish_semantics()
 	# Runs in reduced motion too, where the outline is static and then gone.
 	if _change_age < CHANGE_TIME:
@@ -263,6 +268,12 @@ func semantic_state() -> Dictionary:
 	return state
 
 
+# A full explanation counts as shown once its count step is on screen.
+func _note_explain_progress() -> void:
+	if _explain_steps.size() > 2 and _explain_step() >= _explain_steps.size() - 2:
+		_explain_reached = true
+
+
 # The explanation belongs to one inspected board; any later action ends it.
 func _explaining() -> bool:
 	return not at_title and not _explain_steps.is_empty() and model.trace.size() == _explain_sequence
@@ -307,6 +318,7 @@ func _handle_design_tap(point: Vector2) -> void:
 	if _explaining() and _explain_step() >= 0 and Lesson.px(Lesson.BUBBLE).has_point(point):
 		var step := _explain_step()
 		_explain_age = EXPLAIN_STEP * (step + 1) if step < _explain_steps.size() - 1 else 0.0
+		_note_explain_progress()
 		_publish_semantics()
 		queue_redraw()
 		return
@@ -507,14 +519,26 @@ func _publish_semantics() -> void:
 			and _definition.lines.has("call") and int(_state.action_count) != _count_sequence:
 		_count_sequence = int(_state.action_count)
 		_count_age = 0.0
+	# An explanation that reached its count and was then ended by an action in
+	# the same lesson counts as shown: a later leak repeats only the count.
+	if _explain_reached and model.trace.size() != _explain_sequence:
+		_explain_reached = false
+		var after: Dictionary = model.trace[-1]
+		if String(after.stage_id) == _explain_stage_id and String(after.action) in ["tap_node", "inspect"]:
+			model.mark_leak_explained()
 	# Lesson 5 explains a leak step by step once the foreman has checked.
 	if not at_title and last.get("action", "") == "inspect" and int(_state.action_count) != _explain_sequence \
 			and model.counts_pairs() and _definition.lines.has("steps") and not bool(model.inspection.get("safe", true)):
 		_explain_sequence = int(_state.action_count)
+		_explain_stage_id = String(_definition.id)
+		_explain_reached = false
 		_explain_steps = PackedStringArray()
-		if model.leak_count == 1:
+		if not model.leak_explained:
 			for line in _definition.lines.steps:
 				_explain_steps.append(String(line))
+			# Say honestly when this board has nothing that cancels yet.
+			if model.cancelled_sockets().is_empty():
+				_explain_steps[1] = String(_definition.lines.steps_no_cancel)
 		_explain_steps.append(model.count_summary())
 		_explain_steps.append(String(model.utterance().text))
 		_explain_age = -COUNT_TIME if _counting() else 0.0
@@ -590,13 +614,14 @@ func _announce(state: Dictionary) -> void:
 	JavaScriptBridge.eval("(() => { let live = document.getElementById('disco-breaker-live'); if (!live) { live = document.createElement('div'); live.id = 'disco-breaker-live'; live.setAttribute('aria-live', 'polite'); live.setAttribute('role', 'status'); live.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap'; document.body.appendChild(live); } const text = %s; if (live.textContent !== text) live.textContent = text; })()" % JSON.stringify(text))
 
 
-# A bubble's lines as one announcement: a line without closing punctuation
-# (such as 「赤：上の段 1こ→あまり1こ」) is closed with 「。」 so lines stay apart.
+# A bubble's lines as one announcement: prose lines run on, and a count line
+# without closing punctuation (「赤：上の段 1こ→あまり1こ」) is closed with 「。」
+# so two colours stay apart.
 static func _readable(text: String) -> String:
 	var result := ""
 	for line in text.split("\n"):
 		result += line
-		if not line.is_empty() and not line[-1] in ["。", "！", "？", "、"]:
+		if line.contains("→") and not line[-1] in ["。", "！", "？", "、"]:
 			result += "。"
 	return result
 
