@@ -33,9 +33,12 @@ const PRESS_TIME := 0.15
 # wire glows, floors it turned dark get a gold outline and floors it newly lit
 # an outline in their own colour, all fading out (seconds).
 const CHANGE_TIME := 0.45
-# Lesson 5's first leak is explained step by step (seconds per step); input
-# stays available, any later action ends it, a bubble tap moves on or replays.
+# Lesson 5's first leak is explained step by step; input stays available,
+# any later action ends it, a bubble tap moves on or replays. Each step stays
+# long enough to read: 0.2 s per character (about 5 a second, a slow young
+# reader's pace), at least 2.5 s.
 const EXPLAIN_STEP := 2.5
+const EXPLAIN_PER_CHARACTER := 0.2
 
 var model := Tutorial.new()
 var at_title := true
@@ -155,7 +158,7 @@ func _process(delta: float) -> void:
 	if counting and not _counting():
 		_finish_counting()
 	# Runs in reduced motion too: only the words change.
-	if _explaining() and _explain_age < EXPLAIN_STEP * _explain_steps.size():
+	if _explaining() and _explain_age < _explain_start(_explain_steps.size()):
 		var step := _explain_step()
 		_explain_age += delta
 		if _explain_step() != step:
@@ -283,7 +286,22 @@ func _explaining() -> bool:
 func _explain_step() -> int:
 	if not _explaining() or _explain_age < 0.0:
 		return -1
-	return mini(int(_explain_age / EXPLAIN_STEP), _explain_steps.size() - 1)
+	var step := 0
+	while step < _explain_steps.size() - 1 and _explain_age >= _explain_start(step + 1):
+		step += 1
+	return step
+
+
+# When a step of the current explanation starts (seconds after the check).
+func _explain_start(step: int) -> float:
+	var start := 0.0
+	for i in mini(step, _explain_steps.size()):
+		start += step_seconds(_explain_steps[i])
+	return start
+
+
+static func step_seconds(text: String) -> float:
+	return maxf(EXPLAIN_STEP, text.replace("\n", "").length() * EXPLAIN_PER_CHARACTER)
 
 
 # How much of the counting lesson's teaching the board shows for this check:
@@ -317,7 +335,7 @@ func _handle_design_tap(point: Vector2) -> void:
 	# The explanation's bubble: a tap shows the next step, or replays it.
 	if _explaining() and _explain_step() >= 0 and Lesson.px(Lesson.BUBBLE).has_point(point):
 		var step := _explain_step()
-		_explain_age = EXPLAIN_STEP * (step + 1) if step < _explain_steps.size() - 1 else 0.0
+		_explain_age = _explain_start(step + 1) if step < _explain_steps.size() - 1 else 0.0
 		_note_explain_progress()
 		_publish_semantics()
 		queue_redraw()
@@ -443,7 +461,7 @@ func _settle_animations() -> void:
 	_count_age = SETTLED
 	_change_age = SETTLED
 	# A resumed explanation shows its last word, already settled.
-	_explain_age = EXPLAIN_STEP * _explain_steps.size()
+	_explain_age = _explain_start(_explain_steps.size())
 	_pending_reward = ""
 	_pending_leak_sound = false
 

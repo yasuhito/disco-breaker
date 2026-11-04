@@ -263,6 +263,10 @@ func _test_counting_lessons() -> void:
 # its own line, a later action ends it, the bubble moves on or replays it,
 # home settles it, a second leak repeats only the count and the hint, and
 # reduced motion goes through the same words.
+func _next_step(view) -> void:
+	view._process(view._explain_start(view._explain_step() + 1) - view._explain_age + 0.001)
+
+
 func _test_explanation(view) -> void:
 	var reset := func() -> void:
 		view.model.stage_index = 4
@@ -286,11 +290,15 @@ func _test_explanation(view) -> void:
 	view._process(View.COUNT_TIME + 0.01)
 	var said: Array[String] = [spoken.call()]
 	for step in 4:
-		view._process(View.EXPLAIN_STEP)
+		_next_step(view)
 		said.append(spoken.call())
 	var full: Array[String] = [steps[0], "同じ場所に同じ色を置くと、\n打ち消せるよ。\nこの盤面には、まだないね。", steps[2], "上の段の赤い印は1こ。\n組にならず、1こあまり。", "あまりがあると危ないよ。\n上と下を外して、\n真ん中に赤を置こう！"]
 	_expect(said == full, "the steps: fault, cancelling (none on this board yet), marks, the count, the trap's hint")
-	view._process(View.EXPLAIN_STEP * 3)
+	# Each step stays long enough to read: 0.2 s a character, at least 2.5 s.
+	for i in full.size():
+		_expect(is_equal_approx(view._explain_start(i + 1) - view._explain_start(i), maxf(2.5, full[i].replace("\n", "").length() * 0.2)), "step %d stays for its reading time" % i)
+	_expect(view._explain_start(2) - view._explain_start(1) >= 6.0, "the longest step (35 characters) stays at least 6 s")
+	view._process(30.0)
 	_expect(spoken.call() == String(view.model.utterance().text) and view.semantic_state().explain_step == 4, "the last word stays")
 	# The bubble replays from the start, and moves on step by step.
 	var bubble := Lesson.px(Lesson.BUBBLE).get_center()
@@ -318,7 +326,7 @@ func _test_explanation(view) -> void:
 	call.call()
 	view._process(View.COUNT_TIME + 0.01)
 	_expect(view.semantic_state().explain_steps == 2 and spoken.call() == "上の段の赤い印は1こ。\n組にならず、1こあまり。", "a second leak repeats the count")
-	view._process(View.EXPLAIN_STEP)
+	_next_step(view)
 	_expect(spoken.call() == "まだ電気がもれているよ。\nあまった印が\nなくなるように直そう。", "then its hint")
 	# A check cut short by an edit before any explanation, the trap restored
 	# and checked again: the whole explanation, with the trap's own hint.
@@ -336,14 +344,16 @@ func _test_explanation(view) -> void:
 	view._process(View.COUNT_TIME + 0.01)
 	var again_said: Array[String] = [spoken.call()]
 	for step in 4:
-		view._process(View.EXPLAIN_STEP)
+		_next_step(view)
 		again_said.append(spoken.call())
 	_expect(view.model.leak_count == 2 and view.semantic_state().explain_steps == 5 and again_said == full, "a check cancelled before its explanation gets the whole explanation next time")
 	_expect(spoken.call() == String(view.model.utterance().text) and not String(view.model.utterance().text).begins_with("まだ"), "and its last word is the trap's hint, not 「まだ」")
 	# An explanation ended before its count (here at the marks) is not shown either.
 	reset.call()
 	call.call()
-	view._process(View.COUNT_TIME + 0.01 + View.EXPLAIN_STEP * 2)
+	view._process(View.COUNT_TIME + 0.01)
+	_next_step(view)
+	_next_step(view)
 	_expect(view.semantic_state().explain_step == 2, "fixture: at the marks step")
 	view._handle_design_tap(Lesson.socket_center(0) * 2.0)
 	view._publish_semantics()
@@ -380,7 +390,7 @@ func _test_explanation(view) -> void:
 	reset.call()
 	call.call()
 	_expect(not view.semantic_state().counting and spoken.call() == steps[0], "reduced motion starts the explanation at once")
-	view._process(View.EXPLAIN_STEP)
+	_next_step(view)
 	_expect(spoken.call() == full[1], "and goes through the same steps")
 	view.reduced_motion = false
 	# A safe check is not explained step by step.
