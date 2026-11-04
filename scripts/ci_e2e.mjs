@@ -179,15 +179,13 @@ try {
   await bottom();
 
   await captureState("stage5-start");
-  await assertState("!state.floor_dark && state.lit_red.join() === '0,1' && state.corrections.every((value) => value === 0) && state.demo_active && !state.can_call_foreman && state.utterance.text === 'ちらついているね。\\n親方の直し方を見てみよう。'", "stage5 starts from its fault alone and invites to watch the foreman");
-  // The foreman's demonstration, one bubble tap per step.
-  await clickCanvas(256, 166);
-  await assertState("state.corrections.join() === '0,1,0,0,0,0,0,0,0' && state.lit_red.join() === '1' && state.utterance.text === 'まず、上に赤を置くよ。'", "he places red on the top socket first");
+  await assertState("!state.floor_dark && state.lit_red.join() === '0,1' && state.corrections.every((value) => value === 0) && state.demo_next && !state.can_call_foreman && state.utterance.text === '上と下に赤を置くと、\\nどうなるかな？' && document.getElementById('disco-breaker-live').textContent.endsWith('上に赤を置く を押せる')", "stage5 starts from its fault alone and asks what red on top and bottom would do");
+  // The experiment: the bottom button places each red.
+  await bottom();
+  await assertState("state.corrections.join() === '0,1,0,0,0,0,0,0,0' && state.lit_red.join() === '1' && state.utterance.text === '上に赤を置いたよ。' && document.getElementById('disco-breaker-live').textContent.endsWith('下に赤を置く を押せる')", "the button places red on the top socket: the top-left floor goes dark");
   await captureState("stage5-demo-top", 300);
-  await clickCanvas(256, 166);
-  await assertState("state.corrections.join() === '0,1,0,0,0,0,0,1,0' && state.floor_dark && state.utterance.text === '次は、下に赤を置くよ。'", "then on the bottom socket: dark");
-  await clickCanvas(256, 166);
-  await assertState("state.demo_active && state.can_call_foreman && state.utterance.text === 'ちらつきは消えたね。\\nこれで安全かな？'", "then he asks whether it is safe");
+  await bottom();
+  await assertState("state.corrections.join() === '0,1,0,0,0,0,0,1,0' && state.floor_dark && !state.demo_next && state.can_call_foreman && state.utterance.text === 'ちらつきは消えたね。\\nでも、安全かな？'", "then on the bottom socket: dark, and the question");
   await captureState("stage5-demo-dark");
   await bottom();
   await assertState(

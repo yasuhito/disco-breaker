@@ -212,8 +212,6 @@ func draw(target, model, anim: Dictionary) -> void:
 	_bubble(BUBBLE, String(utterance.text), ink)
 	if bool(anim.get("detail_offered", false)):
 		_detail_hint(BUBBLE)
-	elif bool(anim.get("demo_more", false)):
-		_next_hint(BUBBLE, float(anim.time), reduced)
 	_board(model, state, anim)
 	if float(anim.get("detail", -1.0)) >= 0.0:
 		_check_windows(model, float(anim.detail), reduced)
@@ -239,7 +237,7 @@ func draw(target, model, anim: Dictionary) -> void:
 	elif can_continue:
 		_button(primary, "success", "normal", "つづける", true)
 	elif state.inspection_mode == "call":
-		_button(primary, "call", "normal" if state.can_call_foreman else "disabled", model.call_label(), true)
+		_button(primary, "call", "normal" if state.can_call_foreman or state.get("demo_next", false) else "disabled", model.call_label(), true)
 	else:
 		_button(primary, "success", "disabled", "つづける", true)
 
@@ -693,15 +691,6 @@ func _safe_check() -> void:
 	var center := Vector2(c8.x + 18, c0.y - 38)
 	_plate(center.x - 8, center.y - 8, 16, 16, 5, MINT)
 	_stroke(PackedVector2Array([center + Vector2(-4, 0), center + Vector2(-1, 3), center + Vector2(5, -3)]), INK, 2.0)
-
-
-# During the foreman's demonstration: a small 「▶」 on the bubble (a tap shows
-# his next step), gently pulsing.
-func _next_hint(rect: Rect2, now: float, reduced: bool) -> void:
-	var lift := 0.0 if reduced else (1.0 if int(now / 0.5) % 2 else 0.0)
-	var center := Vector2(rect.end.x - 8, rect.end.y - 7 - lift)
-	_plate(center.x - 6, center.y - 6, 12, 12, 3, GOLD)
-	_poly(PackedVector2Array([center + Vector2(-2, -4), center + Vector2(2, 0), center + Vector2(-2, 4)]), INK)
 
 
 # The foreman's hand placing a demonstration wire: a pointing hand comes down

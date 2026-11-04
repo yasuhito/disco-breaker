@@ -380,8 +380,8 @@ func _test_check_detail(view) -> void:
 	_expect(view.semantic_state().counting and not view._detail_available(), "not while the foreman checks")
 	view._process(View.COUNT_TIME + 0.05)
 	view._publish_semantics()
-	_expect(spoken.call() == "あっ、まだ赤い電気が\n外へ抜けているよ！" and view._detail_available(), "the leak is spoken, and the detail is offered")
-	_expect(view._announcement(view.semantic_state()).contains("外へ抜けているよ！吹き出しをタップすると、くわしく見られるよ。"), "the optional detail is announced as optional")
+	_expect(spoken.call() == "暗いのに、赤い電気が\n外へ抜けているよ！\n暗いだけでは足りないね。" and view._detail_available(), "the leak is spoken, and the detail is offered")
+	_expect(view._announcement(view.semantic_state()).contains("外へ抜けているよ！暗いだけでは足りないね。吹き出しをタップすると、くわしく見られるよ。"), "the optional detail is announced as optional")
 	_expect(view._leak_routes.size() == 1 and int(view._leak_routes[0].component) == 1 and view._leak_routes[0].qubits == [1, 4, 7], "the view's leaving route is the red chain 1-4-7")
 	var trace_size: int = view.model.trace.size()
 	view._handle_design_tap(bubble)
@@ -393,11 +393,11 @@ func _test_check_detail(view) -> void:
 	# The words: the rule, then the actual result once the windows show it;
 	# the announcement keeps the check's verdict first.
 	_expect(view.semantic_state().check_detail_result.is_empty() and spoken.call() == Tutorial.CHECK_DETAIL, "before the windows settle only the rule")
-	_expect(view._announcement(view.semantic_state()).contains("あっ、まだ赤い電気が外へ抜けているよ！くわしく：2こで消える。"), "the announcement keeps the leak first")
+	_expect(view._announcement(view.semantic_state()).contains("暗いのに、赤い電気が外へ抜けているよ！暗いだけでは足りないね。くわしく：2こで消える。"), "the announcement keeps the leak first")
 	_frames(view, View.DETAIL_TIME)
 	view._publish_semantics()
 	_expect(view.semantic_state().check_detail_result == "赤が1こ残ったよ。" and spoken.call() == Tutorial.CHECK_DETAIL + "\n赤が1こ残ったよ。", "then the actual result: one red left")
-	_expect(view._announcement(view.semantic_state()).contains("外へ抜けているよ！くわしく：2こで消える。1こ残ったら、まだ直そう！赤が1こ残ったよ。"), "and the announcement says it too")
+	_expect(view._announcement(view.semantic_state()).contains("外へ抜けているよ！暗いだけでは足りないね。くわしく：2こで消える。1こ残ったら、まだ直そう！赤が1こ残ったよ。"), "and the announcement says it too")
 	view._show_title()
 	view._open_tutorial()
 	view._navigation_guard_until = 0
@@ -460,11 +460,12 @@ func _test_check_detail(view) -> void:
 	_expect(view._leak_routes.size() == 1 and int(view._leak_routes[0].component) == 1 and view.model.utterance().text == "あっ、まだ赤い電気が\n外へ抜けているよ！", "only red leaves and is named; blue's even chain does not")
 
 
-# Lesson 5's demonstration in the view: the bubble (with its 「▶」 cue) shows
-# the foreman's next step, his hand lands on the exact socket while the wire
-# and the floors change through the model, a board tap ends it, home keeps
-# it, rapid bubble taps each show exactly one step, and the words and
-# announcements follow the actual board.
+# Lesson 5's experiment in the view: the bottom button alone moves it on,
+# labelled for each placement and enabled although the floor is lit; the
+# foreman's hand lands on the exact socket while the wire and the floors
+# change through the model; the bubble only explains; a board tap ends it;
+# home keeps it; rapid presses each place exactly one wire; the button and
+# the announcements follow the actual board.
 func _test_demonstration(view) -> void:
 	var reset := func() -> void:
 		view.model.stage_index = 4
@@ -475,58 +476,59 @@ func _test_demonstration(view) -> void:
 		view._navigation_guard_until = 0
 		view._publish_semantics()
 	var bubble := Lesson.px(Lesson.BUBBLE).get_center()
+	var button := View.PRIMARY_RECT.get_center()
 	var frame := func() -> Dictionary:
-		return {"state": view.model.semantic_state(), "demo_node": view.model.demo_node(), "demo_age": view._demo_age,
-			"demo_more": view.model.demo_active() and view.model.demo_step <= view.model.demo_steps().size()}
+		return {"state": view.model.semantic_state(), "demo_node": view.model.demo_node(), "demo_age": view._demo_age}
+	var drawn_button := func() -> Array:
+		var probe := _render(view.model, _anim(0.0, false, frame.call()))
+		return probe.texts.filter(func(entry): return entry.text in ["上に赤を置く", "下に赤を置く", "チェックして！"])
 	view.reduced_motion = false
 	view._muted = true
 	reset.call()
-	var start := _render(view.model, _anim(0.0, false, frame.call()))
-	var cue_at := (Lesson.BUBBLE.end - Vector2(8, 7)) * Lesson.U
-	var cue := func(probe: Probe) -> bool:
-		return not _shapes(probe, Lesson.GOLD).filter(func(shape): return _bounds(shape).get_center().distance_to(cue_at) < 2.5 * Lesson.U).is_empty()
-	_expect(cue.call(start) and view._announcement(view.semantic_state()).contains("親方の直し方を見てみよう。吹き出しをタップすると、親方が続けるよ。"), "the start shows the 「▶」 cue and announces how to go on")
+	var label: Array = drawn_button.call()
+	_expect(label.size() == 1 and label[0].text == "上に赤を置く" and label[0].color != Lesson.MIST, "the start: an enabled 「上に赤を置く」 although the floor is lit")
+	_expect(view._announcement(view.semantic_state()).ends_with("親方「上と下に赤を置くと、どうなるかな？」。上に赤を置く を押せる"), "the announcement names the button honestly")
 	_expect(view.semantic_state().lit_red == [0, 1] and not view._detail_available(), "the board starts lit; no detail is offered")
 	view._handle_design_tap(bubble)
-	_expect(Array(view.model.corrections) == [0, 1, 0, 0, 0, 0, 0, 0, 0] and view._spoken(view.semantic_state()) == "まず、上に赤を置くよ。", "a bubble tap shows the first placement")
-	_expect(view._showing_change() and view._darkened.size() == 1 and view._change_node == 1, "the floor it darkens is shown like a tap on socket 1")
+	_expect(Array(view.model.corrections) == [0, 0, 0, 0, 0, 0, 0, 0, 0] and view.model.demo_step == 0, "a bubble tap does not move the experiment on")
+	view._handle_design_tap(button)
+	_expect(Array(view.model.corrections) == [0, 1, 0, 0, 0, 0, 0, 0, 0] and view._spoken(view.semantic_state()) == "上に赤を置いたよ。", "the button places the top red")
+	_expect(view._showing_change() and view._darkened.size() == 1 and int(view._darkened[0].check) == 0 and view._change_node == 1, "the floor it darkens (red floor 0) is shown like a tap on socket 1")
 	var placed := _render(view.model, _anim(0.0, false, frame.call()))
 	var hand := _shapes(placed, Lesson.SKIN).filter(func(shape): return _bounds(shape).get_center().distance_to(Lesson.socket_center(1) * Lesson.U) < 30.0 * Lesson.U)
-	_expect(not hand.is_empty() and hand.all(func(shape): return _bounds(shape).end.y <= (Lesson.socket_center(1).y + 1.0) * Lesson.U and absf(_bounds(shape).get_center().x - (Lesson.socket_center(1).x + 5.0) * Lesson.U) < 6.0 * Lesson.U), "his hand comes down onto socket 1")
+	_expect(not hand.is_empty() and hand.all(func(shape): return _bounds(shape).end.y <= (Lesson.socket_center(1).y + 1.0) * Lesson.U and absf(_bounds(shape).get_center().x - (Lesson.socket_center(1).x + 5.0) * Lesson.U) < 6.0 * Lesson.U), "the foreman's hand comes down onto socket 1")
+	label = drawn_button.call()
+	_expect(label.size() == 1 and label[0].text == "下に赤を置く" and label[0].color != Lesson.MIST, "then the button reads 「下に赤を置く」")
 	view._process(Lesson.DEMO_POINT_TIME + 0.1)
 	_expect(_shapes(_render(view.model, _anim(0.0, false, frame.call())), Lesson.SKIN).filter(func(shape): return _bounds(shape).get_center().distance_to(Lesson.socket_center(1) * Lesson.U) < 30.0 * Lesson.U).is_empty(), "then the hand leaves")
-	# Rapid bubble taps: exactly one step each, never more.
-	view._handle_design_tap(bubble)
-	view._handle_design_tap(bubble)
-	_expect(view.model.demo_step == 3 and Array(view.model.corrections) == [0, 1, 0, 0, 0, 0, 0, 1, 0] and view.model.is_dark(), "two quick taps: the bottom placement, then the dark line")
-	var trace_size: int = view.model.trace.size()
-	view._handle_design_tap(bubble)
-	_expect(view.model.demo_step == 3 and view.model.trace.size() == trace_size and view._spoken(view.semantic_state()) == "ちらつきは消えたね。\nこれで安全かな？", "a further tap changes nothing")
-	_expect(not cue.call(_render(view.model, _anim(0.0, false, frame.call()))) and not view._announcement(view.semantic_state()).contains("親方が続けるよ") and view._announcement(view.semantic_state()).ends_with("チェックして！ を押せる"), "no cue once he has finished; the check is offered")
+	# Rapid presses: one placement, then the button checks (an inspection, not a placement).
+	view._handle_design_tap(button)
+	_expect(view.model.demo_step == 2 and Array(view.model.corrections) == [0, 1, 0, 0, 0, 0, 0, 1, 0] and view.model.is_dark() and view._spoken(view.semantic_state()) == "ちらつきは消えたね。\nでも、安全かな？", "the second press places the bottom red: dark, and the question")
+	label = drawn_button.call()
+	_expect(label.size() == 1 and label[0].text == "チェックして！" and view._announcement(view.semantic_state()).ends_with("チェックして！ を押せる"), "no empty step: the button now checks")
 	# Home keeps the board and the step.
 	view._show_title()
 	view._open_tutorial()
 	view._navigation_guard_until = 0
-	_expect(view.model.demo_step == 3 and Array(view.model.corrections) == [0, 1, 0, 0, 0, 0, 0, 1, 0], "home and resume keep the demonstrated board")
-	# The check: the real leak.
-	view._handle_design_tap(View.PRIMARY_RECT.get_center())
+	_expect(view.model.demo_step == 2 and Array(view.model.corrections) == [0, 1, 0, 0, 0, 0, 0, 1, 0], "home and resume keep the experiment's board")
+	view._handle_design_tap(button)
 	view._publish_semantics()
 	view._process(View.COUNT_TIME + 0.05)
 	view._publish_semantics()
 	_expect(view._leak_routes.size() == 1 and view._leak_routes[0].qubits == [1, 4, 7] and not view.model.demo_active(), "the check shows the actual red leaving along 1-4-7")
-	# A board tap during the demonstration ends it; the bubble then does nothing to the board.
+	# A board tap during the experiment ends it; the button then follows the board.
 	reset.call()
-	view._handle_design_tap(bubble)
+	view._handle_design_tap(button)
 	view._handle_design_tap(Lesson.socket_center(4) * 2.0)
 	view._publish_semantics()
 	var after := Array(view.model.corrections)
-	view._handle_design_tap(bubble)
-	_expect(not view.model.demo_active() and Array(view.model.corrections) == after and after == [0, 1, 0, 0, 1, 0, 0, 0, 0], "a board tap ends the demonstration; no later placement")
-	_expect(view._spoken(view.semantic_state()) == "光る床がある。\nまず全部暗くしよう。" and not view._announcement(view.semantic_state()).contains("親方が続けるよ"), "the words follow the actual board")
-	# Reduced motion: the hand rests on the socket, the same steps.
+	view._handle_design_tap(button)
+	_expect(not view.model.demo_active() and Array(view.model.corrections) == after and after == [0, 1, 0, 0, 1, 0, 0, 0, 0], "a board tap ends the experiment; the (disabled) button places nothing later")
+	_expect(view._spoken(view.semantic_state()) == "光る床がある。\nまず全部暗くしよう。" and view._announcement(view.semantic_state()).ends_with("チェックして！ はまだ押せない"), "the words and the button follow the actual board")
+	# Reduced motion: the hand rests on the socket.
 	view.reduced_motion = true
 	reset.call()
-	view._handle_design_tap(bubble)
+	view._handle_design_tap(button)
 	var still: Dictionary = frame.call()
 	_expect(str(_render(view.model, _anim(0.0, true, still)).log) == str(_render(view.model, _anim(0.4, true, still)).log), "reduced motion draws the placement still")
 	view.reduced_motion = false
@@ -535,12 +537,12 @@ func _test_demonstration(view) -> void:
 # Every call-mode lesson's bottom button reads 「チェックして！」 (disabled on a
 # lit board too); no lesson shows 「親方を呼ぶ」 any more.
 func _test_call_labels() -> void:
-	for case in [[3, "チェックして！"], [4, "チェックして！"], [6, "チェックして！"]]:
+	for case in [[3, "チェックして！"], [4, "上に赤を置く"], [6, "チェックして！"]]:
 		var model := Tutorial.new()
 		model.stage_index = case[0]
 		model._reset_stage()
 		var drawn := _texts(_render(model, _anim()))
-		_expect(drawn.has(case[1]) and drawn.count("チェックして！") == 1 and not drawn.has("親方を呼ぶ"), "lesson %d's call button reads %s" % [case[0] + 1, case[1]])
+		_expect(drawn.count(case[1]) == 1 and drawn.count("チェックして！") + drawn.count("上に赤を置く") == 1 and not drawn.has("親方を呼ぶ"), "lesson %d's call button reads %s" % [case[0] + 1, case[1]])
 	var lit := Tutorial.new()
 	lit.stage_index = 3
 	lit._reset_stage()

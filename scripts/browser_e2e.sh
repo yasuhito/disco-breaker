@@ -198,15 +198,13 @@ capture_state 14 stage4-inspection-passed
 chrome-devtools-axi screenshot artifacts/tutorial-inspection-dialogue.png >/dev/null
 click_canvas 194 760 stage4-continue
 
-assert_state "${S}.stage_id === 'crossing_trap' && !${S}.floor_dark && ${S}.demo_active && ${S}.corrections.every(value => value === 0) && !${S}.fault_revealed"
+assert_state "${S}.stage_id === 'crossing_trap' && !${S}.floor_dark && ${S}.demo_next && ${S}.corrections.every(value => value === 0) && !${S}.fault_revealed"
 capture_state 15 stage5-start
-# The foreman's demonstration: top, bottom, then the dark line.
-click_canvas 256 166 stage5-demo-top
+# The experiment: the bottom button places the top red, then the bottom red.
+click_canvas 194 760 stage5-demo-top
 assert_state "${S}.corrections.join() === '0,1,0,0,0,0,0,0,0' && ${S}.lit_red.join() === '1'"
-click_canvas 256 166 stage5-demo-bottom
-assert_state "${S}.corrections.join() === '0,1,0,0,0,0,0,1,0' && ${S}.floor_dark && ${S}.can_call_foreman"
-click_canvas 256 166 stage5-demo-dark
-assert_state "${S}.demo_active && ${S}.utterance.text === 'ちらつきは消えたね。\\nこれで安全かな？'"
+click_canvas 194 760 stage5-demo-bottom
+assert_state "${S}.corrections.join() === '0,1,0,0,0,0,0,1,0' && ${S}.floor_dark && ${S}.can_call_foreman && !${S}.demo_next && ${S}.utterance.text === 'ちらつきは消えたね。\\nでも、安全かな？'"
 click_canvas 194 760 stage5-call-trap
 assert_state "${S}.inspection.red_crossing && !${S}.inspection.blue_crossing && !${S}.passed && !${S}.can_continue && !${S}.fault_revealed"
 # Lesson 5 checks for 1.0 s, then shows the red light leaving the board.

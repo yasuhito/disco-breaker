@@ -293,11 +293,6 @@ func _handle_design_tap(point: Vector2) -> void:
 	if HOME_RECT.has_point(point):
 		_show_title()
 		return
-	# During the demonstration the bubble shows the foreman's next step.
-	if model.demo_active() and Lesson.px(Lesson.BUBBLE).has_point(point):
-		if _advance_demo():
-			queue_redraw()
-		return
 	# The bubble on a check's result opens (or replays) the detailed check.
 	if _detail_available() and Lesson.px(Lesson.BUBBLE).has_point(point):
 		_detail_sequence = model.trace.size()
@@ -312,8 +307,11 @@ func _handle_design_tap(point: Vector2) -> void:
 			_show_title()
 		return
 	if PRIMARY_RECT.has_point(point):
-		# A disabled button does nothing.
-		if model.can_continue():
+		# A disabled button does nothing. During lesson 5's demonstration the
+		# button makes its next placement.
+		if model.demo_next():
+			_advance_demo()
+		elif model.can_continue():
 			if not _counting():
 				model.next_stage()
 		elif model.can_call_foreman():
@@ -342,18 +340,17 @@ func _tap(row: int, column: int) -> bool:
 	return _changing(node, func() -> bool: return model.tap_node(row, column))
 
 
-# The foreman's next demonstration step, shown like a tap on its socket.
+# The demonstration's next placement, shown like a tap on its socket.
 func _advance_demo() -> bool:
-	var steps: int = model.demo_steps().size()
-	if model.demo_step < steps:
-		var node := int(model.demo_steps()[model.demo_step].node)
-		if not _changing(node, func() -> bool: return model.advance_demo()):
-			return false
-		_tap_node_index = node
-		_tap_age = 0.0
-		_demo_age = 0.0
-		return true
-	return model.advance_demo()
+	if not model.demo_next():
+		return false
+	var node := int(model.demo_steps()[model.demo_step].node)
+	if not _changing(node, func() -> bool: return model.advance_demo()):
+		return false
+	_tap_node_index = node
+	_tap_age = 0.0
+	_demo_age = 0.0
+	return true
 
 
 # Runs a change of one socket and remembers which floors it turned dark or lit.
@@ -484,7 +481,7 @@ func _draw() -> void:
 		"leak_age": _leak_age, "routes": _leak_routes,
 		"counting": _count_age if _counting() else -1.0,
 		"spoken": _spoken(semantic_state()), "detail": _detail_age if _detailing() else -1.0,
-		"demo_node": model.demo_node(), "demo_age": _demo_age, "demo_more": model.demo_active() and model.demo_step <= model.demo_steps().size(),
+		"demo_node": model.demo_node(), "demo_age": _demo_age,
 		"detail_offered": _detail_available() and not _detailing(),
 		"change": {"node": _change_node, "darkened": _darkened, "lit": _lit, "wires": _changed_wires, "age": _change_age} if _showing_change() else {},
 	})
@@ -613,8 +610,6 @@ func _announcement(state: Dictionary) -> String:
 		said = _readable(String(state.utterance.text)) + "くわしく：" + said
 	elif _detail_available():
 		said += "吹き出しをタップすると、くわしく見られるよ。"
-	elif model.demo_active() and model.demo_step <= model.demo_steps().size():
-		said += "吹き出しをタップすると、親方が続けるよ。"
 	return "タイトル画面" if at_title else "レッスン %d / %d。親方「%s」。%s" % [
 		state.stage, state.stage_count, said, _button_announcement(state)]
 
@@ -640,7 +635,7 @@ func _button_announcement(state: Dictionary) -> String:
 	if state.continue_enabled:
 		return "つづける を押せる"
 	if state.inspection_mode == "call":
-		return model.call_label() + (" を押せる" if state.can_call_foreman else " はまだ押せない")
+		return model.call_label() + (" を押せる" if state.can_call_foreman or state.get("demo_next", false) else " はまだ押せない")
 	return "つづける はまだ押せない"
 
 

@@ -109,13 +109,16 @@ func _build_stages() -> Array[Dictionary]:
 			"id": "crossing_trap", "title": "暗いのに安全じゃない？", "size": 3, "inspect": "call",
 			"hidden": {4: RED}, "preset": {}, "target": -1,
 			"call_label": "チェックして！", "counts_pairs": true, "focus": [RED],
-			# The foreman's demonstration: from the fault alone he places red on
-			# the top, then the bottom socket, one bubble tap each (the same
-			# corrections a tap makes); a last tap says the floor is dark. Any
-			# tap on the board or a check ends it and keeps the actual board.
-			"demo": [{"node": 1, "line": "まず、上に赤を置くよ。"}, {"node": 7, "line": "次は、下に赤を置くよ。"}],
-			"lines": {"open": "ちらついているね。\n親方の直し方を見てみよう。",
-				"demo_done": "ちらつきは消えたね。\nこれで安全かな？",
+			# An experiment, not a repair: from the fault alone the bottom button
+			# places red on the top socket, then the bottom one (the foreman's
+			# hand, the same corrections a tap makes), then checks the dark but
+			# unsafe floor. Any tap on the board or a check ends it and keeps the
+			# actual board.
+			"demo": [{"node": 1, "label": "上に赤を置く", "line": "上に赤を置いたよ。"},
+				{"node": 7, "label": "下に赤を置く", "line": "ちらつきは消えたね。\nでも、安全かな？"}],
+			# The leak of this lesson says why a dark floor is not yet fixed.
+			"leak": "暗いのに、%s電気が\n外へ抜けているよ！\n暗いだけでは足りないね。",
+			"lines": {"open": "上と下に赤を置くと、\nどうなるかな？",
 				"lit": "光る床がある。\nまず全部暗くしよう。",
 				"dark": "暗くなったね。\nチェックしよう！", "dark_seen": "暗くなったね。\nもう一度チェックしよう！",
 				# Spoken while the foreman checks after being called (the view's presentation).
@@ -191,8 +194,11 @@ func definition() -> Dictionary:
 	return stages()[stage_index]
 
 
-# The bottom button's label while it calls the foreman.
+# The bottom button's label while it calls the foreman, or names the
+# demonstration's next placement.
 func call_label() -> String:
+	if demo_next():
+		return String(demo_steps()[demo_step].label)
 	return String(definition().get("call_label", "親方を呼ぶ"))
 
 
@@ -337,8 +343,6 @@ func utterance() -> Dictionary:
 	if not inspection.is_empty():
 		return {"kind": "unsafe", "text": _leak_line()}
 	if demo_active() and demo_step > 0:
-		if demo_step > demo_steps().size():
-			return {"kind": "demo", "text": String(lines.demo_done)}
 		return {"kind": "demo", "text": String(demo_steps()[demo_step - 1].line)}
 	if not touched:
 		return {"kind": "start", "text": lines.open}
@@ -353,7 +357,10 @@ func _leak_line() -> String:
 	if counts_pairs():
 		var red_leaves := bool(inspection.get("red_crossing", false))
 		var blue_leaves := bool(inspection.get("blue_crossing", false))
-		return String(LEAVING["both" if red_leaves and blue_leaves else ("red" if red_leaves else "blue")])
+		var family := "both" if red_leaves and blue_leaves else ("red" if red_leaves else "blue")
+		if d.has("leak"):
+			return String(d.leak) % {"red": "赤い", "blue": "青い", "both": "赤と青の"}[family]
+		return String(LEAVING[family])
 	var red := bool(inspection.get("red_crossing", false))
 	var blue := bool(inspection.get("blue_crossing", false))
 	var color: String = LEAK_COLOR["both" if red and blue else ("red" if red else "blue")]
@@ -414,26 +421,26 @@ func demo_active() -> bool:
 	return not finished and not demo_steps().is_empty() and not demo_over
 
 
-# The next step of the demonstration: the foreman places the next wire (a
-# real correction of the board, recorded as his), or after the last wire
-# says the floor is dark. False when there is nothing left to show.
+# A placement of the demonstration is next (the bottom button makes it).
+func demo_next() -> bool:
+	return demo_active() and demo_step < demo_steps().size()
+
+
+# The demonstration's next placement: a real correction of the board,
+# recorded as the foreman's. False when nothing is left to place.
 func advance_demo() -> bool:
-	if not demo_active() or demo_step >= demo_steps().size() + 1:
+	if not demo_next():
 		return false
-	if demo_step < demo_steps().size():
-		var node := int(demo_steps()[demo_step].node)
-		corrections[node] = RED
-		demo_step += 1
-		_record("demo_place", {"node": node, "state": corrections[node]})
-	else:
-		demo_step += 1
-		_record("demo_next", {})
+	var node := int(demo_steps()[demo_step].node)
+	corrections[node] = RED
+	demo_step += 1
+	_record("demo_place", {"node": node, "state": corrections[node]})
 	return true
 
 
 # The socket the demonstration placed last, or -1.
 func demo_node() -> int:
-	if not demo_active() or demo_step == 0 or demo_step > demo_steps().size():
+	if not demo_active() or demo_step == 0:
 		return -1
 	return int(demo_steps()[demo_step - 1].node)
 
@@ -508,6 +515,7 @@ func semantic_state() -> Dictionary:
 		"fault_revealed": fault_revealed(),
 		"leak_seen": leak_seen,
 		"demo_active": demo_active(),
+		"demo_next": demo_next(),
 		"demo_step": demo_step,
 		"utterance": utterance(),
 		"progress": progress(),

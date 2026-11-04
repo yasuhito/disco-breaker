@@ -133,7 +133,7 @@ try {
   await tap(page,194,760); // inspection
   await tap(page,194,760,1800); // the foreman counts
   await tap(page,194,760);
-  for(let i=0;i<3;i++) await tap(page,256,166); // the foreman's demonstration
+  for(let i=0;i<2;i++) await tap(page,194,760); // the experiment: top red, bottom red
   await tap(page,194,760); // trap
   assert.equal((await feedback(page)).leak_active,true);
   const leakCount=(await feedback(page)).leak_sound_starts;

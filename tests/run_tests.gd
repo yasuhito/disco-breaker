@@ -173,27 +173,27 @@ func _test_independent_crossing_parity() -> void:
 
 
 # Lesson 5 starts from its original fault alone (centre red, two red floors
-# lit, no wires). The foreman's demonstration then places red on the top
-# socket, then the bottom one, a bubble tap each, as real corrections; the
-# floors follow the same model; a last step says the floor is dark. Any tap
-# or check ends it on the actual board, without later placements.
+# lit, no wires) and asks what red on the top and the bottom would do. The
+# bottom button, labelled for each step, places red on the top socket, then
+# the bottom one, as real corrections (an experiment, not a repair); the
+# floors follow the same model; then it reads 「チェックして！」. Any tap or
+# check ends the experiment on the actual board, without later placements.
 func _test_demonstration() -> void:
 	var model := Tutorial.new()
 	model.stage_index = 4
 	model._reset_stage()
 	_expect(Array(model.corrections) == [0, 0, 0, 0, 0, 0, 0, 0, 0] and model.lit_red_checks() == [0, 1] and model.lit_blue_checks().is_empty(), "lesson 5 starts with only its fault: no wires, two red floors lit")
-	_expect(model.demo_active() and model.demo_step == 0 and not model.can_call_foreman() and model.utterance() == {"kind": "start", "text": "ちらついているね。\n親方の直し方を見てみよう。"}, "it opens by inviting to watch the foreman, the check not yet possible")
-	_expect(model.advance_demo() and Array(model.corrections) == [0, 1, 0, 0, 0, 0, 0, 0, 0] and model.lit_red_checks() == [1] and model.demo_node() == 1, "first he places red on the top socket: the top-left floor goes dark")
-	_expect(model.utterance() == {"kind": "demo", "text": "まず、上に赤を置くよ。"} and model.trace[-1].action == "demo_place" and not model.touched, "he says so, and it is recorded as his, not the player's")
-	_expect(model.advance_demo() and Array(model.corrections) == [0, 1, 0, 0, 0, 0, 0, 1, 0] and model.is_dark() and model.demo_node() == 7, "then red on the bottom socket: every floor is dark")
-	_expect(model.utterance() == {"kind": "demo", "text": "次は、下に赤を置くよ。"} and model.can_call_foreman(), "he says so; the check is now possible")
-	_expect(model.advance_demo() and model.utterance() == {"kind": "demo", "text": "ちらつきは消えたね。\nこれで安全かな？"} and model.demo_node() == -1, "then the floor is dark and he asks whether it is safe")
-	_expect(not model.advance_demo() and model.demo_active(), "nothing more to show; the last line stays")
+	_expect(model.demo_next() and not model.can_call_foreman() and model.call_label() == "上に赤を置く" and model.utterance() == {"kind": "start", "text": "上と下に赤を置くと、\nどうなるかな？"}, "it asks what red on top and bottom would do; the button places the top red")
+	_expect(model.advance_demo() and Array(model.corrections) == [0, 1, 0, 0, 0, 0, 0, 0, 0] and model.lit_red_checks() == [1] and model.demo_node() == 1, "red on the top socket: the top-left red floor goes dark, the bottom-right one stays lit")
+	_expect(model.utterance() == {"kind": "demo", "text": "上に赤を置いたよ。"} and model.trace[-1].action == "demo_place" and not model.touched and model.call_label() == "下に赤を置く", "it says so, is recorded as the foreman's, and the button places the bottom red next")
+	_expect(model.advance_demo() and Array(model.corrections) == [0, 1, 0, 0, 0, 0, 0, 1, 0] and model.is_dark() and model.demo_node() == 7, "red on the bottom socket: every floor is dark")
+	_expect(model.utterance() == {"kind": "demo", "text": "ちらつきは消えたね。\nでも、安全かな？"} and not model.demo_next() and model.can_call_foreman() and model.call_label() == "チェックして！", "it asks whether it is safe; the button now checks, with no empty step")
+	_expect(not model.advance_demo() and model.demo_active(), "nothing more to place; the question stays")
 	var verdict := model.inspect_floor()
-	_expect(not bool(verdict.safe) and bool(verdict.red_crossing) and not model.demo_active() and model.utterance().text == "あっ、まだ赤い電気が\n外へ抜けているよ！", "the check finds the real leak and ends the demonstration")
+	_expect(not bool(verdict.safe) and bool(verdict.red_crossing) and not model.demo_active() and model.utterance().text == "暗いのに、赤い電気が\n外へ抜けているよ！\n暗いだけでは足りないね。", "the check finds the real leak, ends the experiment and says a dark floor is not enough")
 	_expect(Array(model._residual_support(Tutorial.RED)) == [1, 4, 7] and model.cut_marks(Tutorial.RED) == [1], "the leaving red is the actual leftover 1-4-7")
 	# A tap at any step ends it on the actual board; nothing is placed later.
-	for step in 4:
+	for step in 3:
 		var cut := Tutorial.new()
 		cut.stage_index = 4
 		cut._reset_stage()
@@ -202,34 +202,34 @@ func _test_demonstration() -> void:
 		var before := Array(cut.corrections)
 		cut.tap_node(2, 2)
 		before[8] = 1
-		_expect(not cut.demo_active() and Array(cut.corrections) == before, "step %d: a tap ends the demonstration and keeps the actual board" % step)
+		_expect(not cut.demo_active() and Array(cut.corrections) == before and cut.call_label() == "チェックして！", "step %d: a tap ends the experiment, keeps the actual board and the button checks" % step)
 		_expect(not cut.advance_demo() and Array(cut.corrections) == before and cut.utterance().kind in ["mistake", "ready"], "step %d: no later placement, and the words follow the board" % step)
 	# Repairing at once (centre red) is not gated: dark, then a safe check.
 	var direct := Tutorial.new()
 	direct.stage_index = 4
 	direct._reset_stage()
 	direct.tap_node(1, 1)
-	_expect(direct.is_dark() and not direct.demo_active() and direct.inspect_floor().safe and direct.can_continue(), "the player may repair at once without watching")
+	_expect(direct.is_dark() and not direct.demo_active() and direct.inspect_floor().safe and direct.can_continue(), "the player may repair at once without the experiment")
 	# Replay restarts it; other lessons have none.
 	model.restart()
 	model.stage_index = 4
 	model._reset_stage()
-	_expect(model.demo_active() and model.demo_step == 0 and Array(model.corrections) == [0, 0, 0, 0, 0, 0, 0, 0, 0], "a reset lesson starts the demonstration again")
+	_expect(model.demo_next() and model.demo_step == 0 and Array(model.corrections) == [0, 0, 0, 0, 0, 0, 0, 0, 0], "a reset lesson starts the experiment again")
 	for stage in [0, 1, 2, 3, 5, 6]:
 		var other := Tutorial.new()
 		other.stage_index = stage
 		other._reset_stage()
-		_expect(not other.demo_active() and not other.advance_demo(), "lesson %d has no demonstration" % (stage + 1))
+		_expect(not other.demo_active() and not other.advance_demo() and not other.demo_next(), "lesson %d has no demonstration" % (stage + 1))
 
 
 func _test_crossing_trap_observe_then_repair() -> void:
 	var model := _at(4)
 	_expect(model.is_dark() and model.can_call_foreman() and not model.fault_revealed(), "the trap looks cleared and hides its fault before inspection")
-	_expect(model.utterance().text == "ちらつきは消えたね。\nこれで安全かな？" and String(model.definition().title) == "暗いのに安全じゃない？", "after the demonstration the trap asks whether a dark floor is safe")
+	_expect(model.utterance().text == "ちらつきは消えたね。\nでも、安全かな？" and String(model.definition().title) == "暗いのに安全じゃない？", "after the experiment the trap asks whether a dark floor is safe")
 	var verdict := model.inspect_floor()
 	_expect(verdict.red_crossing and not verdict.blue_crossing and not verdict.safe, "trap keeps its odd red class only")
 	_expect(not model.passed() and not model.can_continue() and not model.next_stage(), "the first inspection is a leak, not a pass")
-	_expect(model.utterance() == {"kind": "unsafe", "text": "あっ、まだ赤い電気が\n外へ抜けているよ！"}, "the trap's leak says the red electricity still leaves, with no repair hint")
+	_expect(model.utterance() == {"kind": "unsafe", "text": "暗いのに、赤い電気が\n外へ抜けているよ！\n暗いだけでは足りないね。"}, "the trap's leak says the red electricity leaves although it is dark, with no repair hint")
 	_expect(model.cut_marks(Tutorial.RED) == [1], "the trap's leftovers 1, 4, 7 leave one mark on the top row")
 	_expect(not model.fault_revealed() and not model.can_call_foreman(), "lessons 5-7 never reveal the original fault; the call waits for a change")
 	model.tap_node(0, 1)
@@ -266,14 +266,14 @@ func _test_crossing_trap_alternatives() -> void:
 	var other := _at(4)
 	_wire(other, {1: Tutorial.RED, 8: Tutorial.RED, 7: Tutorial.EMPTY})
 	other.inspect_floor()
-	_expect(other.is_dark() and not other.inspection.safe and other.utterance().text == "あっ、まだ赤い電気が\n外へ抜けているよ！", "another leaking board says the same, without a fixed repair hint")
+	_expect(other.is_dark() and not other.inspection.safe and other.utterance().text == "暗いのに、赤い電気が\n外へ抜けているよ！\n暗いだけでは足りないね。", "another leaking board says the same, without a fixed repair hint")
 	# Red repaired, but a blue row across the left column: dark, and unsafe
 	# only because of blue, so blue is counted too.
 	var blue := _at(4)
 	_wire(blue, {1: Tutorial.EMPTY, 7: Tutorial.EMPTY, 3: Tutorial.BLUE, 4: Tutorial.BOTH, 5: Tutorial.BLUE})
 	blue.inspect_floor()
 	_expect(blue.is_dark() and not blue.inspection.safe and blue.inspection.blue_crossing and not blue.inspection.red_crossing, "fixture: lesson 5 leaking through blue only")
-	_expect(blue.utterance().text == "あっ、まだ青い電気が\n外へ抜けているよ！" and blue.counted_components() == [Tutorial.RED, Tutorial.BLUE] and blue.cut_marks(Tutorial.RED).is_empty() and blue.cut_marks(Tutorial.BLUE) == [3], "a blue leak in lesson 5 names blue, and blue is counted on the left column too")
+	_expect(blue.utterance().text == "暗いのに、青い電気が\n外へ抜けているよ！\n暗いだけでは足りないね。" and blue.counted_components() == [Tutorial.RED, Tutorial.BLUE] and blue.cut_marks(Tutorial.RED).is_empty() and blue.cut_marks(Tutorial.BLUE) == [3], "a blue leak in lesson 5 names blue, and blue is counted on the left column too")
 	var again := _at(4)
 	again.inspect_floor()
 	again.tap_node(0, 0)
@@ -281,7 +281,7 @@ func _test_crossing_trap_alternatives() -> void:
 		again.tap_node(0, 0)
 	# 「まだ」 depends on the explanation having been shown, not on the count of
 	# checks: a leak checked again before the explanation still gets the trap's hint.
-	_expect(not again.inspect_floor().safe and again.leak_count == 2 and again.utterance().text == "あっ、まだ赤い電気が\n外へ抜けているよ！", "a repeated leak says the same")
+	_expect(not again.inspect_floor().safe and again.leak_count == 2 and again.utterance().text == "暗いのに、赤い電気が\n外へ抜けているよ！\n暗いだけでは足りないね。", "a repeated leak says the same")
 
 
 # Lessons 5-7 count each colour's leftovers on its inspection line. Over many
