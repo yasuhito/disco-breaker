@@ -331,7 +331,7 @@ func _test_check_detail_plan() -> void:
 		_expect(gone.size() == case[0] - case[0] % 2 and final.flights.all(func(value): return value >= 1.0), "%d marks: every particle arrived, %d vanished in pairs" % [case[0], case[0] - case[0] % 2])
 	var early := Lesson.detail_plan(2, Lesson.DETAIL_FLY_AT + 0.1)
 	_expect(early.flights[0] > 0.0 and early.flights[1] == 0.0 and not early.green, "particles fly in one after another")
-	_expect(Lesson.DETAIL_DONE <= View.DETAIL_TIME, "the view's detail time covers the plan")
+	_expect(Lesson.DETAIL_DONE <= View.DETAIL_TIME and Lesson.detail_settle(3) <= Lesson.DETAIL_DONE, "the view's detail time covers the plan, up to three marks on a line")
 
 
 # Advance the view in 0.1 s frames.

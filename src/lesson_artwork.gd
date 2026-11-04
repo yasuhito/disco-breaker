@@ -93,8 +93,11 @@ const FLOW_TRAVEL := 1.0
 # the line's sockets one after another, then vanish pair by pair.
 const DETAIL_FLY_AT := 0.3
 const DETAIL_FLY_STEP := 0.3
-const DETAIL_FLY := 0.6
-const DETAIL_PAIR := 0.4
+const DETAIL_FLY := 1.0
+# The first part of a flight: the particle appears on its socket (with a ring)
+# before it leaves, so its source is seen.
+const DETAIL_LIFT := 0.35
+const DETAIL_PAIR := 0.6
 const DETAIL_DONE := 3.6
 const CHECK_WINDOW_Y := 294.0
 # The lit warning lamp's four diagonal rays (units from its centre): outside
@@ -724,12 +727,19 @@ func _check_windows(model, age: float, reduced: bool) -> void:
 			var flight: float = plan.flights[i]
 			if flight <= 0.0:
 				continue
-			var eased := 1.0 - pow(1.0 - flight, 3.0)
-			var position := socket_center(marks[i]).lerp(slot, eased)
+			var lift := clampf(flight / DETAIL_LIFT, 0.0, 1.0)
+			var travel := clampf((flight - DETAIL_LIFT) / (1.0 - DETAIL_LIFT), 0.0, 1.0)
+			var eased := 1.0 - pow(1.0 - travel, 3.0)
+			var source := socket_center(marks[i])
+			var position := source.lerp(slot, eased)
 			var gone: float = plan.vanish[i]
 			if gone >= 1.0:
 				continue
-			_diamond(position.x, position.y, 3.0 * (1.0 - gone), f.hi)
+			if travel <= 0.0:
+				var ring := _oct_points(source.x - 14, source.y - 14, 28, 28, 9)
+				ring.append(ring[0])
+				_stroke(ring, Color(f.hi, lift), 1.5)
+			_diamond(position.x, position.y, (2.0 + 2.0 * lift) * (1.0 - gone), f.hi)
 		for pair in int(marks.size() / 2.0):
 			var shown: float = plan.vanish[pair * 2]
 			if shown > 0.0 and shown < 1.0:
