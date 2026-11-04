@@ -14,6 +14,10 @@ const LEAK_COLOR := {"red": "赤い線が上から下へ。", "blue": "青い線
 const LEAK_AUTO := "暗いけど漏電！\n"
 const LEAK_CALL := "漏電あり！\n"
 const LEAK_AGAIN := "まだ漏電。\n"
+# Lessons 5-7: the colour(s) the inspection found leaving the board.
+const LEAVING := {"red": "あっ、まだ赤い電気が\n外へ抜けているよ！", "blue": "あっ、まだ青い電気が\n外へ抜けているよ！", "both": "あっ、まだ赤と青の電気が\n外へ抜けているよ！"}
+# The optional detailed check: leftovers on the inspection lines, in pairs.
+const CHECK_DETAIL := "2こで消える。\n1こ残ったら、まだ直そう！"
 # Hints for a lit floor, used only while they describe the actual board.
 const LIT_HINTS := {
 	"red_one_tap": "光る床が残っている。\n中央を押してみよう。",
@@ -37,9 +41,6 @@ var touched := false
 # Inspections on this floor that reported a leak (lesson 5 keeps the
 # original-fault reveal for the repair once one has).
 var leak_count := 0
-# The view has shown this lesson's leak explanation up to its count (a
-# presentation fact, set only after the explanation; the verdict never waits).
-var leak_explained := false
 var leak_seen: bool:
 	get:
 		return leak_count > 0
@@ -91,44 +92,38 @@ func _build_stages() -> Array[Dictionary]:
 				# Spoken while the foreman checks after being called (the view's presentation).
 				"call": "電気がもれていないか、\nチェックするよ！"},
 		},
-		# Lessons 5-7 teach the check with leftover marks counted in pairs on
-		# the inspection lines ("counts_pairs"): red counts its leftovers on the
-		# top row, blue on the left column ("focus" colours first, the other
-		# colour too whenever it has leftovers).
+		# Lessons 5-7 show the check visually ("counts_pairs"): on a leak the
+		# leaving colour's remaining sockets light up and its light runs along
+		# the real leak route to a warning lamp outside the board; a bubble tap
+		# shows the optional detail, the leftovers on each colour's inspection
+		# line (red: top row, blue: left column) vanishing two by two ("focus"
+		# colours first, the other colour too whenever it has leftovers).
 		{
 			"id": "crossing_trap", "title": "暗いのに安全じゃない？", "size": 3, "inspect": "call",
 			"hidden": {4: RED}, "preset": {1: RED, 7: RED}, "target": -1,
 			"call_label": "チェックして！", "counts_pairs": true, "focus": [RED],
-			"lines": {"open": "ちらつきは全部消えてるね。\nでも、これで安全かな？",
+			"lines": {"open": "ちらつきは消えたね。\nちゃんと直ったかな？",
 				"lit": "光る床がある。\nまず全部暗くしよう。",
 				"dark": "暗くなったね。\nチェックしよう！", "dark_seen": "暗くなったね。\nもう一度チェックしよう！",
 				# Spoken while the foreman checks after being called (the view's presentation).
 				"call": "電気がもれていないか、\nチェックするよ！",
-				# The step-by-step explanation of the first leak (the view's presentation).
-				"steps": ["電気がもれているよ！\n破線は、元の故障だよ。", "同じ場所の同じ色は、\n打ち消し合って消えるよ。", "打ち消されずに残った所に\n印をつけたよ。"],
-				# The cancelling step on a board where nothing cancels yet.
-				"steps_no_cancel": "同じ場所に同じ色を置くと、\n打ち消せるよ。\nこの盤面には、まだないね。",
-				# Only the untouched trap is repaired by exactly this.
-				"unsafe_preset": "あまりがあると危ないよ。\n上と下を外して、\n真ん中に赤を置こう！",
-				"unsafe": "あまりがあると危ないよ。\nあまった印が\nなくなるように直そう。",
-				"unsafe_again": "まだ電気がもれているよ。\nあまった印が\nなくなるように直そう。",
-				"ok": "よし、電気はもれてないね。"},
+				"ok": "よし、もう外へ抜けないね。\nこれで安心！"},
 		},
 		{
 			"id": "boundary_single", "title": "はしっこの床", "size": 3, "inspect": "auto",
 			"hidden": {0: RED} if boundary_phase == 0 else {2: BLUE},
 			"preset": {}, "target": 0 if boundary_phase == 0 else 2,
 			"counts_pairs": true, "focus": [RED] if boundary_phase == 0 else [BLUE],
-			"lines": {"open": "はしっこの床は\n1つだけ光ることがあるよ。\n左上を1回タップしよう！", "unsafe": "電気がもれているよ！", "ok": "いいぞ！"}
+			"lines": {"open": "はしっこの床は\n1つだけ光ることがあるよ。\n左上を1回タップしよう！", "ok": "いいぞ！\nもう外へ抜けないね。"}
 				if boundary_phase == 0 else
-				{"open": "次は青。\n右上を2回タップしよう！", "unsafe": "電気がもれているよ！", "ok": "いいぞ！"},
+				{"open": "次は青。\n右上を2回タップしよう！", "ok": "いいぞ！\nもう外へ抜けないね。"},
 		},
 		{
 			"id": "graduation_3x3", "title": "自分でやってみよう", "size": 3, "inspect": "call",
 			"hidden": {4: RED, 2: BLUE}, "preset": {}, "target": -1,
 			"call_label": "チェックして！", "counts_pairs": true, "focus": [RED, BLUE],
 			"lines": {"open": "赤と青がちらついてるね。\n全部暗くして、\nチェックしよう！", "lit": "光る床がある。\nまず全部暗くしよう。",
-				"dark": "暗くなったね。\nチェックしよう！", "unsafe": "電気がもれているよ！", "ok": "よし、電気はもれてないね。"},
+				"dark": "暗くなったね。\nチェックしよう！", "ok": "よし、もう外へ抜けないね。\n全部できた！"},
 		},
 	]
 
@@ -302,7 +297,8 @@ func lit_blue_checks() -> Array[int]:
 # The original fault is shown only after an inspection found a leak: on the
 # leaking board itself, and in lesson 5 for the rest of the repair.
 func fault_revealed() -> bool:
-	if finished:
+	# Lessons 5-7 show where the electricity leaves, not the original fault.
+	if finished or counts_pairs():
 		return false
 	if not inspection.is_empty() and not bool(inspection.safe):
 		return true
@@ -321,8 +317,6 @@ func utterance() -> Dictionary:
 		return {"kind": "done", "text": SKIPPED_TEXT if skipped else DONE_TEXT}
 	var lines: Dictionary = definition().lines
 	if passed():
-		if counts_pairs():
-			return {"kind": "safe", "text": String(lines.ok) + "\n" + count_summary()}
 		return {"kind": "safe", "text": lines.ok}
 	if not inspection.is_empty():
 		return {"kind": "unsafe", "text": _leak_line()}
@@ -337,14 +331,9 @@ func utterance() -> Dictionary:
 func _leak_line() -> String:
 	var d := definition()
 	if counts_pairs():
-		var lines: Dictionary = d.lines
-		if lines.has("unsafe_preset"):
-			# Lesson 5: the explanation's last word; its count was the step
-			# before. 「まだ」 only once the explanation has really been shown.
-			if leak_explained:
-				return String(lines.unsafe_again)
-			return String(lines.unsafe_preset if _matches(d.preset) else lines.unsafe)
-		return String(lines.unsafe) + "\n" + count_summary()
+		var red_leaves := bool(inspection.get("red_crossing", false))
+		var blue_leaves := bool(inspection.get("blue_crossing", false))
+		return String(LEAVING["both" if red_leaves and blue_leaves else ("red" if red_leaves else "blue")])
 	var red := bool(inspection.get("red_crossing", false))
 	var blue := bool(inspection.get("blue_crossing", false))
 	var color: String = LEAK_COLOR["both" if red and blue else ("red" if red else "blue")]
@@ -384,20 +373,6 @@ func _lit_line() -> String:
 	return LIT_GENERIC
 
 
-func mark_leak_explained() -> void:
-	leak_explained = true
-
-
-# Sockets where a wire matches the original fault in a colour (they cancel).
-func cancelled_sockets() -> Array[int]:
-	var result: Array[int] = []
-	var hidden: Dictionary = definition().hidden
-	for node in corrections.size():
-		if int(hidden.get(node, EMPTY)) & corrections[node]:
-			result.append(node)
-	return result
-
-
 func counts_pairs() -> bool:
 	return bool(definition().get("counts_pairs", false))
 
@@ -423,42 +398,6 @@ func counted_components() -> Array[int]:
 		if not result.has(component) and not _residual_support(component).is_empty():
 			result.append(component)
 	return result
-
-
-const COUNT_PLACE := {RED: "上の段", BLUE: "左の列"}
-const COUNT_COLOR := {RED: "赤", BLUE: "青"}
-
-
-# Two lines counting the marks on each reported line and what is left over
-# after pairing them: the real numbers, never an assumed zero.
-func count_summary() -> String:
-	var colors := counted_components()
-	if colors.size() == 1:
-		return count_text(colors[0], cut_marks(colors[0]).size())
-	var lines: PackedStringArray = []
-	for component in colors:
-		lines.append(count_line(component, cut_marks(component).size()))
-	return "\n".join(lines)
-
-
-# One colour reported alone: its marks, then what pairing them leaves.
-static func count_text(component: int, count: int) -> String:
-	return "%sの%sい印は%dこ。\n%s" % [COUNT_PLACE[component], COUNT_COLOR[component], count, _pair_text(count)]
-
-
-# One of two colours reported together, on one line.
-static func count_line(component: int, count: int) -> String:
-	return "%s：%s %dこ→あまり%dこ" % [COUNT_COLOR[component], COUNT_PLACE[component], count, count % 2]
-
-
-static func _pair_text(count: int) -> String:
-	if count == 0:
-		return "あまりなし。"
-	if count % 2 == 0:
-		return "%dこで%d組、あまり0こ。" % [count, count / 2]
-	if count == 1:
-		return "組にならず、1こあまり。"
-	return "%d組できて、1こあまり。" % (count / 2)
 
 
 func _matches(wiring: Dictionary) -> bool:
@@ -497,7 +436,6 @@ func semantic_state() -> Dictionary:
 		"can_continue": can_continue(),
 		"fault_revealed": fault_revealed(),
 		"leak_seen": leak_seen,
-		"leak_explained": leak_explained,
 		"utterance": utterance(),
 		"progress": progress(),
 		"action_count": trace.size(),
@@ -521,7 +459,6 @@ func _reset_stage() -> void:
 	inspection = {}
 	touched = false
 	leak_count = 0
-	leak_explained = false
 
 
 func _lit_checks(component: int) -> Array[int]:

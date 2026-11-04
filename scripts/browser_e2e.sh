@@ -201,16 +201,16 @@ click_canvas 194 760 stage4-continue
 assert_state "${S}.stage_id === 'crossing_trap' && ${S}.floor_dark && ${S}.can_call_foreman && !${S}.fault_revealed"
 capture_state 15 stage5-start
 click_canvas 194 760 stage5-call-trap
-assert_state "${S}.inspection.red_crossing && !${S}.inspection.blue_crossing && !${S}.passed && !${S}.can_continue && ${S}.fault_revealed"
-# Lesson 5 checks for 1.0 s, then explains the leak step by step.
+assert_state "${S}.inspection.red_crossing && !${S}.inspection.blue_crossing && !${S}.passed && !${S}.can_continue && !${S}.fault_revealed"
+# Lesson 5 checks for 1.0 s, then shows the red light leaving the board.
 wait_for_check_end
-assert_state "${S}.explain_step >= 0 && document.getElementById('disco-breaker-live').textContent.includes('電気がもれているよ！') && !document.getElementById('disco-breaker-live').textContent.includes('漏電')"
+assert_state "document.getElementById('disco-breaker-live').textContent.includes('あっ、まだ赤い電気が外へ抜けているよ！') && !document.getElementById('disco-breaker-live').textContent.includes('漏電') && window.discoBreakerFeedback.leak_routes.length === 1"
 capture_state 16 stage5-leak-explained 2.3
 chrome-devtools-axi screenshot artifacts/tutorial-crossing-trap.png >/dev/null
 click_canvas 194 760 stage5-no-continue-after-leak
 assert_state "${S}.stage === 5 && ${S}.last_action.action === 'inspect'"
 click_canvas 194 304 stage5-repair-top 3
-assert_state "!${S}.floor_dark && ${S}.fault_revealed && ${S}.explain_step === -1 && ${S}.utterance.text === '光る床がある。\\nまず全部暗くしよう。'"
+assert_state "!${S}.floor_dark && !${S}.fault_revealed && !${S}.check_detail && ${S}.utterance.text === '光る床がある。\\nまず全部暗くしよう。'"
 capture_state 17 stage5-repair-lit
 click_canvas 194 488 stage5-repair-bottom 3
 click_canvas 194 396 stage5-repair-center
@@ -219,7 +219,7 @@ capture_state 18 stage5-repair-dark
 click_canvas 194 760 stage5-call-repaired
 assert_state "${S}.passed && ${S}.can_continue"
 wait_for_check_end
-assert_state "${S}.continue_enabled && ${S}.utterance.text === 'よし、電気はもれてないね。\\n上の段の赤い印は0こ。\\nあまりなし。'"
+assert_state "${S}.continue_enabled && ${S}.utterance.text === 'よし、もう外へ抜けないね。\\nこれで安心！'"
 capture_state 19 stage5-pass
 click_canvas 194 760 stage5-continue
 
@@ -251,13 +251,13 @@ capture_state 27 two-red-flickers-after
 click_canvas 102 304 stage7-blue-leak-corner 2
 click_canvas 194 304 stage7-blue-leak-top 2
 click_canvas 194 760 stage7-call-blue-leak
-assert_state "${S}.inspection.blue_crossing && !${S}.inspection.red_crossing && ${S}.utterance.text === '電気がもれているよ！\n赤：上の段 0こ→あまり0こ\n青：左の列 1こ→あまり1こ'"
+assert_state "${S}.inspection.blue_crossing && !${S}.inspection.red_crossing && ${S}.utterance.text === 'あっ、まだ青い電気が\n外へ抜けているよ！'"
 capture_state 28 stage7-blue-leak 2.3
 click_canvas 194 304 stage7-both-leak-top 1
 click_canvas 194 488 stage7-both-leak-bottom
 click_canvas 194 396 stage7-both-leak-center 3
 click_canvas 194 760 stage7-call-both-leak
-assert_state "${S}.inspection.blue_crossing && ${S}.inspection.red_crossing && ${S}.utterance.text === '電気がもれているよ！\n赤：上の段 1こ→あまり1こ\n青：左の列 1こ→あまり1こ'"
+assert_state "${S}.inspection.blue_crossing && ${S}.inspection.red_crossing && ${S}.utterance.text === 'あっ、まだ赤と青の電気が\n外へ抜けているよ！'"
 capture_state 29 stage7-both-leak 2.3
 click_canvas 102 304 stage7-undo-corner 2
 click_canvas 194 304 stage7-undo-top

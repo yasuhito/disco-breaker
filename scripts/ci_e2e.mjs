@@ -182,27 +182,32 @@ try {
   await assertState("state.floor_dark && state.can_call_foreman && !state.fault_revealed", "stage5 trap looks cleared and hides its fault");
   await bottom();
   await assertState(
-    "state.inspection.red_crossing && !state.inspection.blue_crossing && !state.passed && !state.can_continue && state.fault_revealed",
+    "state.inspection.red_crossing && !state.inspection.blue_crossing && !state.passed && !state.can_continue && !state.fault_revealed",
     "stage5 crossing trap fails on the red family only and does not pass",
   );
-  // Lesson 5 checks for 1.0 s too; its discharge and explanation follow.
+  // Lesson 5 checks for 1.0 s too; its discharge and leaving light follow.
   await page.waitForFunction(() => !window.discoBreakerState.counting, null, { timeout: 5000 });
   const leak = await page.evaluate(() => window.discoBreakerFeedback);
-  if (!leak.leak_active || leak.leak_events !== 3 || leak.leak_sound_starts !== 3 || JSON.stringify(leak.leak_routes[0].qubits) !== '[1,4,7]' || leak.revealed_hidden['4'] !== 1) throw new Error(`trap must reveal the original center X and its real residual route once: ${JSON.stringify(leak)}`);
+  if (!leak.leak_active || leak.leak_events !== 3 || leak.leak_sound_starts !== 3 || JSON.stringify(leak.leak_routes[0].qubits) !== '[1,4,7]' || leak.leak_routes.length !== 1 || Object.keys(leak.revealed_hidden).length) throw new Error(`the trap's red leaves along its real residual route once, without a fault reveal: ${JSON.stringify(leak)}`);
   const live = await page.evaluate(() => document.getElementById("disco-breaker-live")?.textContent ?? "");
-  if (!live.includes("電気がもれているよ！") || live.includes("漏電") || !live.endsWith("チェックして！ はまだ押せない")) throw new Error(`the live region must announce the latest line and the button: ${live}`);
+  if (!live.includes("あっ、まだ赤い電気が外へ抜けているよ！") || live.includes("漏電") || !live.endsWith("チェックして！ はまだ押せない")) throw new Error(`the live region must announce the latest line and the button: ${live}`);
   await captureState("stage5-leak-explained", 2300);
   await bottom();
   await assertState("state.stage === 5 && state.last_action.action === 'inspect'", "Continue stays disabled after the leak");
   await box(1, 3);
-  await assertState("!state.floor_dark && state.fault_revealed && state.utterance.text === '光る床がある。\\nまず全部暗くしよう。' && state.explain_step === -1", "an edit ends the explanation; the repair keeps the dashed fault");
+  await assertState("!state.floor_dark && !state.fault_revealed && state.utterance.text === '光る床がある。\\nまず全部暗くしよう。' && !state.check_detail", "an edit ends the result; the repair is made without a fault reveal");
+  if ((await page.evaluate(() => window.discoBreakerFeedback)).leak_routes.length) throw new Error("an edit removes the leaving light");
   await box(7, 3);
   await box(4);
   await assertState("state.floor_dark && state.can_call_foreman && state.utterance.kind === 'ready'", "repaired trap asks for another inspection");
   await bottom();
   await assertState("state.passed && state.can_continue", "the repaired trap passes its inspection");
   await page.waitForFunction(() => !window.discoBreakerState.counting, null, { timeout: 5000 });
-  await assertState("state.continue_enabled && state.utterance.text === 'よし、電気はもれてないね。\\n上の段の赤い印は0こ。\\nあまりなし。'", "the pass speaks its real count");
+  await assertState("state.continue_enabled && state.utterance.text === 'よし、もう外へ抜けないね。\\nこれで安心！'", "the pass says nothing leaves any more");
+  // The optional detailed check: a tap on the bubble, no new game state.
+  const beforeDetail = await page.evaluate(() => window.discoBreakerState.action_count);
+  await clickCanvas(194, 120);
+  await assertState(`state.check_detail && state.action_count === ${beforeDetail} && state.continue_enabled && document.getElementById('disco-breaker-live').textContent.includes('2こで消える。1こ残ったら、まだ直そう！')`, "a bubble tap opens the detailed check without changing the game");
   await captureState("stage5-pass");
   await bottom();
 
@@ -235,13 +240,13 @@ try {
   await box(0, 2);
   await box(1, 2);
   await bottom();
-  await assertState("state.inspection.blue_crossing && !state.inspection.red_crossing && state.utterance.text === '電気がもれているよ！\\n赤：上の段 0こ→あまり0こ\\n青：左の列 1こ→あまり1こ'", "a blue leak is counted on the left column");
+  await assertState("state.inspection.blue_crossing && !state.inspection.red_crossing && state.utterance.text === 'あっ、まだ青い電気が\\n外へ抜けているよ！'", "a blue leak names blue");
   await captureState("stage7-blue-leak", 2300);
   await box(1);
   await box(7);
   await box(4, 3);
   await bottom();
-  await assertState("state.inspection.blue_crossing && state.inspection.red_crossing && state.utterance.text === '電気がもれているよ！\\n赤：上の段 1こ→あまり1こ\\n青：左の列 1こ→あまり1こ'", "a leak in both colours counts both");
+  await assertState("state.inspection.blue_crossing && state.inspection.red_crossing && state.utterance.text === 'あっ、まだ赤と青の電気が\\n外へ抜けているよ！'", "a leak in both colours names both");
   const both = await page.evaluate(() => window.discoBreakerFeedback);
   if (both.leak_routes.length !== 2) throw new Error(`both colours need their own route: ${JSON.stringify(both)}`);
   await captureState("stage7-both-leak", 2300);

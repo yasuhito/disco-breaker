@@ -172,21 +172,21 @@ func _test_independent_crossing_parity() -> void:
 func _test_crossing_trap_observe_then_repair() -> void:
 	var model := _at(4)
 	_expect(model.is_dark() and model.can_call_foreman() and not model.fault_revealed(), "the trap looks cleared and hides its fault before inspection")
-	_expect(model.utterance().text == "ちらつきは全部消えてるね。\nでも、これで安全かな？" and String(model.definition().title) == "暗いのに安全じゃない？", "the trap opens by asking whether a dark floor is safe")
+	_expect(model.utterance().text == "ちらつきは消えたね。\nちゃんと直ったかな？" and String(model.definition().title) == "暗いのに安全じゃない？", "the trap opens by asking whether a dark floor is safe")
 	var verdict := model.inspect_floor()
 	_expect(verdict.red_crossing and not verdict.blue_crossing and not verdict.safe, "trap keeps its odd red class only")
 	_expect(not model.passed() and not model.can_continue() and not model.next_stage(), "the first inspection is a leak, not a pass")
-	_expect(model.utterance() == {"kind": "unsafe", "text": "あまりがあると危ないよ。\n上と下を外して、\n真ん中に赤を置こう！"}, "only the untouched trap gets the top-and-bottom repair hint")
-	_expect(model.cut_marks(Tutorial.RED) == [1] and model.count_summary() == "上の段の赤い印は1こ。\n組にならず、1こあまり。", "the trap's leftovers 1, 4, 7 leave one mark on the top row")
-	_expect(model.fault_revealed() and not model.can_call_foreman(), "the leak reveals the fault; the call waits for a change")
+	_expect(model.utterance() == {"kind": "unsafe", "text": "あっ、まだ赤い電気が\n外へ抜けているよ！"}, "the trap's leak says the red electricity still leaves, with no repair hint")
+	_expect(model.cut_marks(Tutorial.RED) == [1], "the trap's leftovers 1, 4, 7 leave one mark on the top row")
+	_expect(not model.fault_revealed() and not model.can_call_foreman(), "lessons 5-7 never reveal the original fault; the call waits for a change")
 	model.tap_node(0, 1)
-	_expect(not model.is_dark() and model.fault_revealed(), "repairs keep the original fault visible in lesson 5")
+	_expect(not model.is_dark() and not model.fault_revealed(), "repairs are made without a fault reveal")
 	_expect(model.utterance().text == "光る床がある。\nまず全部暗くしよう。", "a lit repair is asked to go dark first")
 	var taps := 1 + _wire(model, {4: Tutorial.RED})
 	_expect(taps == 7, "the canonical repair matches the fault in seven taps")
 	_expect(model.is_dark() and model.can_call_foreman() and model.utterance().text == "暗くなったね。\nもう一度チェックしよう！", "a dark repair asks for another check")
 	_expect(model.inspect_floor().safe and model.can_continue(), "a repaired, inspected trap passes")
-	_expect(model.utterance().text == "よし、電気はもれてないね。\n上の段の赤い印は0こ。\nあまりなし。", "the canonical pass counts its zero marks")
+	_expect(model.utterance().text == "よし、もう外へ抜けないね。\nこれで安心！", "the canonical pass says nothing leaves any more")
 	model.next_stage()
 	_expect(model.definition().id == "boundary_single" and not model.fault_revealed(), "the next lesson hides the fault again")
 
@@ -209,18 +209,18 @@ func _test_crossing_trap_alternatives() -> void:
 	_wire(loop, {1: Tutorial.RED, 2: Tutorial.RED, 5: Tutorial.RED})
 	_expect(loop.inspect_floor().safe and loop.can_continue(), "the loop-shaped leftover passes")
 	_expect(Array(loop._residual_support(Tutorial.RED)) == [1, 2, 4, 5], "the loop keeps its leftovers")
-	_expect(loop.utterance().text == "よし、電気はもれてないね。\n上の段の赤い印は2こ。\n2こで1組、あまり0こ。", "a safe alternative counts its two marks as one pair, not as zero")
+	_expect(loop.utterance().text == "よし、もう外へ抜けないね。\nこれで安心！" and loop.cut_marks(Tutorial.RED).size() == 2, "a safe alternative with two marks on the top row passes, and its words claim no count")
 	var other := _at(4)
 	_wire(other, {1: Tutorial.RED, 8: Tutorial.RED, 7: Tutorial.EMPTY})
 	other.inspect_floor()
-	_expect(other.is_dark() and not other.inspection.safe and other.utterance().text == "あまりがあると危ないよ。\nあまった印が\nなくなるように直そう。", "another leaking board gets a hint about its own leftovers, not the trap's repair")
+	_expect(other.is_dark() and not other.inspection.safe and other.utterance().text == "あっ、まだ赤い電気が\n外へ抜けているよ！", "another leaking board says the same, without a fixed repair hint")
 	# Red repaired, but a blue row across the left column: dark, and unsafe
 	# only because of blue, so blue is counted too.
 	var blue := _at(4)
 	_wire(blue, {1: Tutorial.EMPTY, 7: Tutorial.EMPTY, 3: Tutorial.BLUE, 4: Tutorial.BOTH, 5: Tutorial.BLUE})
 	blue.inspect_floor()
 	_expect(blue.is_dark() and not blue.inspection.safe and blue.inspection.blue_crossing and not blue.inspection.red_crossing, "fixture: lesson 5 leaking through blue only")
-	_expect(blue.counted_components() == [Tutorial.RED, Tutorial.BLUE] and blue.count_summary() == "赤：上の段 0こ→あまり0こ\n青：左の列 1こ→あまり1こ", "a blue leak in lesson 5 is counted on the left column too")
+	_expect(blue.utterance().text == "あっ、まだ青い電気が\n外へ抜けているよ！" and blue.counted_components() == [Tutorial.RED, Tutorial.BLUE] and blue.cut_marks(Tutorial.RED).is_empty() and blue.cut_marks(Tutorial.BLUE) == [3], "a blue leak in lesson 5 names blue, and blue is counted on the left column too")
 	var again := _at(4)
 	again.inspect_floor()
 	again.tap_node(0, 0)
@@ -228,13 +228,7 @@ func _test_crossing_trap_alternatives() -> void:
 		again.tap_node(0, 0)
 	# 「まだ」 depends on the explanation having been shown, not on the count of
 	# checks: a leak checked again before the explanation still gets the trap's hint.
-	_expect(not again.inspect_floor().safe and again.leak_count == 2 and again.utterance().text == "あまりがあると危ないよ。\n上と下を外して、\n真ん中に赤を置こう！", "a repeated leak before any explanation still gets the trap's own hint")
-	again.mark_leak_explained()
-	_expect(again.utterance().text == "まだ電気がもれているよ。\nあまった印が\nなくなるように直そう。", "after the explanation was shown, a leak says it is still leaking")
-	again.next_stage()
-	_expect(again.stage_index == 4 and again.leak_explained, "a leak keeps the lesson (and its shown explanation)")
-	var fresh := _at(4)
-	_expect(not fresh.leak_explained and not fresh.semantic_state().leak_explained, "a fresh lesson 5 has not shown its explanation")
+	_expect(not again.inspect_floor().safe and again.leak_count == 2 and again.utterance().text == "あっ、まだ赤い電気が\n外へ抜けているよ！", "a repeated leak says the same")
 
 
 # Lessons 5-7 count each colour's leftovers on its inspection line. Over many
@@ -262,11 +256,11 @@ func _test_counts_match_inspection() -> void:
 				for node in model.cut_marks(component):
 					_expect(Array(model._residual_support(component)).has(node), "marks are real leftovers")
 			if bool(verdict.safe) and model.is_dark():
-				var summary := model.count_summary()
+				model.inspection = verdict
+				var words := String(model.utterance().text)
+				_expect(not words.contains("0") and not words.contains("2"), "a pass never claims a count")
 				for component in colors:
-					var count := model.cut_marks(component).size()
-					_expect(summary.contains("%dこ" % count), "a pass states the real count")
-					seen_pair = seen_pair or count == 2
+					seen_pair = seen_pair or model.cut_marks(component).size() == 2
 				seen_other = seen_other or colors.size() > model.definition().focus.size()
 	_expect(seen_pair and seen_other, "the sample includes safe boards with a pair, and boards reporting the other colour")
 
@@ -417,10 +411,10 @@ func _test_leak_lines_follow_inspection() -> void:
 		[0, {1: 1, 7: 1}, "暗いけど漏電！\n赤い線が上から下へ。"],
 		[1, {3: 2, 5: 2}, "暗いけど漏電！\n青い線が左から右へ。"],
 		[2, {1: 1, 3: 2, 5: 2, 7: 1}, "暗いけど漏電！\n赤も青も抜けている。"],
-		[5, {3: 1, 6: 1}, "電気がもれているよ！\n上の段の赤い印は1こ。\n組にならず、1こあまり。"],
-		[6, {1: 1, 2: 2, 7: 1}, "電気がもれているよ！\n赤：上の段 1こ→あまり1こ\n青：左の列 0こ→あまり0こ"],
-		[6, {0: 2, 1: 2, 4: 1}, "電気がもれているよ！\n赤：上の段 0こ→あまり0こ\n青：左の列 1こ→あまり1こ"],
-		[6, {0: 2, 1: 3, 7: 1}, "電気がもれているよ！\n赤：上の段 1こ→あまり1こ\n青：左の列 1こ→あまり1こ"],
+		[5, {3: 1, 6: 1}, "あっ、まだ赤い電気が\n外へ抜けているよ！"],
+		[6, {1: 1, 2: 2, 7: 1}, "あっ、まだ赤い電気が\n外へ抜けているよ！"],
+		[6, {0: 2, 1: 2, 4: 1}, "あっ、まだ青い電気が\n外へ抜けているよ！"],
+		[6, {0: 2, 1: 3, 7: 1}, "あっ、まだ赤と青の電気が\n外へ抜けているよ！"],
 		[3, {1: 1, 4: 2, 7: 1}, "漏電あり！\n赤い線が上から下へ。"],
 	]
 	for case in cases:
@@ -430,7 +424,7 @@ func _test_leak_lines_follow_inspection() -> void:
 			model.inspect_floor()
 		_expect(model.is_dark() and not model.inspection.is_empty() and not model.inspection.safe, "fixture board leaks: %s" % [case])
 		_expect(model.utterance() == {"kind": "unsafe", "text": case[2]}, "leak line names the colours the inspection found: %s" % [case])
-		_expect(not model.can_continue() and model.fault_revealed(), "a leak keeps Continue disabled and shows the fault")
+		_expect(not model.can_continue() and model.fault_revealed() == not model.counts_pairs(), "a leak keeps Continue disabled; lessons 1-4 show the fault, 5-7 do not")
 		model.tap_node(2, 2)
 		_expect(model.inspection.is_empty() and not model.fault_revealed() and model.utterance().kind == "mistake", "a change clears the stale verdict and its explanation")
 
@@ -454,23 +448,9 @@ func _test_foreman_copy_fits_bubble() -> void:
 						copy.append(String(step))
 				else:
 					copy.append(String(line))
-			# Counting lessons speak generated counts: every count on a 3 x 3 line,
-			# alone, as the verdict's tail, and both colours together.
-			if bool(stage.get("counts_pairs", false)):
-				for count in 4:
-					for component in [Tutorial.RED, Tutorial.BLUE]:
-						var alone := Tutorial.count_text(component, count)
-						copy.append(alone)
-						copy.append(String(stage.lines.ok) + "\n" + alone)
-						# Lesson 5's leak lines are fixed; lessons 6 and 7 append the count.
-						if not stage.lines.has("unsafe_preset"):
-							copy.append(String(stage.lines.unsafe) + "\n" + alone)
-					for blue in 4:
-						var both := Tutorial.count_line(Tutorial.RED, count) + "\n" + Tutorial.count_line(Tutorial.BLUE, blue)
-						copy.append(both)
-						copy.append(String(stage.lines.ok) + "\n" + both)
-						if stage.lines.has("unsafe") and not stage.lines.has("unsafe_preset"):
-							copy.append(String(stage.lines.unsafe) + "\n" + both)
+	for text in Tutorial.LEAVING.values():
+		copy.append(String(text))
+	copy.append(Tutorial.CHECK_DETAIL)
 	# The bubble holds three 24 px lines in its 114-unit text column, also in bold.
 	# The human-approved third lines of lessons 1, 2 and 4 are wider: they must
 	# still stay on the paper (bubble 256 px - 14 px text inset - 2 px ink

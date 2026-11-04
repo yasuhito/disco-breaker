@@ -83,6 +83,19 @@ const SPEAKER_SPAN := {false: Vector2(0, 34.2), true: Vector2(-8.5, 22.5)}
 const LEAK_ROUTE_AT := 0.7
 const LEAK_REVEAL_AT := 1.4
 const LEAK_DONE_AT := 2.0
+# Lessons 5-7: a leak's leaving light (seconds after the verdict is shown):
+# the board dims, remaining sockets light one by one, then the light travels.
+const FLOW_DIM := 0.25
+const FLOW_MARK_AT := 0.3
+const FLOW_MARK_STEP := 0.35
+const FLOW_TRAVEL := 1.0
+# The detailed check (the view's DETAIL_TIME covers it): particles fly from
+# the line's sockets one after another, then vanish pair by pair.
+const DETAIL_FLY_AT := 0.3
+const DETAIL_FLY_STEP := 0.3
+const DETAIL_FLY := 0.6
+const DETAIL_PAIR := 0.4
+const DETAIL_DONE := 3.6
 # A wiring tap's floor outlines and wire glow (the view's CHANGE_TIME): full
 # for the first part, then one smooth fade; reduced motion holds it unfaded.
 const CHANGE_HOLD := 0.15
@@ -153,7 +166,7 @@ func draw(target, model, anim: Dictionary) -> void:
 	var counting := float(anim.get("counting", -1.0))
 	if counting >= 0.0:
 		utterance = {"kind": "counting", "text": String(model.definition().lines.call)}
-	# A step of the lesson's explanation is spoken in place of the verdict.
+	# The detailed check's words are spoken in place of the verdict.
 	elif anim.has("spoken") and String(anim.spoken) != String(utterance.text):
 		utterance = {"kind": "explain", "text": String(anim.spoken)}
 	var happy := (bool(state.passed) and counting < 0.0) or bool(state.finished)
@@ -184,8 +197,15 @@ func draw(target, model, anim: Dictionary) -> void:
 		"mistake":
 			ink = BROWN
 	_bubble(BUBBLE, String(utterance.text), ink)
+	if bool(anim.get("detail_offered", false)):
+		_detail_hint(BUBBLE)
 	_board(model, state, anim)
-	if _shows_fault(model, state, anim) or _teach_level(model, state, anim) >= 0:
+	if float(anim.get("detail", -1.0)) >= 0.0:
+		_check_windows(model, float(anim.detail), reduced)
+	elif model.counts_pairs() and state.inspected:
+		# A lesson 5-7 result uses the legend's place for its warning lamp.
+		pass
+	elif _shows_fault(model, state, anim):
 		# The answer is a tutorial reveal, not information from the floors.
 		_text("破線は元の故障、実線は自分の配線", 194, 578, MIST, "center")
 		_text("元の故障は練習用に見せている。", 194, 602, MIST, "center")
@@ -218,19 +238,6 @@ func _shows_fault(model, state: Dictionary, anim: Dictionary) -> bool:
 	if state.stage_id == "crossing_trap" and int(model.leak_count) > (1 if leaking else 0):
 		return true
 	return _leak_age(anim, state) >= LEAK_REVEAL_AT
-
-
-# How much a counting lesson (5-7) teaches on this board, -1 for nothing:
-# 0 the original fault, 1 cancelled sockets, 2 leftover marks, 3 the counts
-# on the inspection lines. A check shows up to the view's level; after
-# lesson 5's leak the board keeps the fault, cancels and marks while it is
-# edited, without counts.
-func _teach_level(model, state: Dictionary, anim: Dictionary) -> int:
-	if not model.counts_pairs():
-		return -1
-	if state.inspected:
-		return -1 if float(anim.get("counting", -1.0)) >= 0.0 else int(anim.get("teach_level", 3))
-	return 2 if state.fault_revealed else -1
 
 
 func _leak_age(anim: Dictionary, state: Dictionary) -> float:
@@ -298,8 +305,7 @@ func _board(model, state: Dictionary, anim: Dictionary) -> void:
 	var counting := float(anim.get("counting", -1.0))
 	# A lesson that does not teach counting shows no inspection lines and no
 	# count marks; its verdict and leak route are the same.
-	var level := _teach_level(model, state, anim)
-	# Counting lessons replace the old leak presentation with their own marks.
+	# Lessons 5-7 replace the old leak presentation with the leaving light.
 	var old_leak: bool = leak and not model.counts_pairs()
 	var teaches_counting: bool = bool(d.get("teaches_counting", true)) and not model.counts_pairs()
 	if teaches_counting and counting < 0.0 and ((leak and age >= 0.0) or (inspected and state.inspection_mode == "call")):
@@ -320,17 +326,22 @@ func _board(model, state: Dictionary, anim: Dictionary) -> void:
 		var grow := 1.0 if age >= LEAK_REVEAL_AT else (age - LEAK_ROUTE_AT) / (LEAK_REVEAL_AT - LEAK_ROUTE_AT)
 		for route in routes:
 			_route_line(route, grow)
-	var reveal: bool = level >= 0 if model.counts_pairs() else _shows_fault(model, state, anim)
-	var zeros: bool = level >= 1 or not model.counts_pairs()
+	var reveal := _shows_fault(model, state, anim)
 	for node in 9:
 		var hidden := int(d.hidden.get(node, 0)) if reveal else 0
 		var pressed: bool = not reduced and node == int(anim.pressed_node) and float(anim.since_press) < 0.11
-		_socket(socket_center(node), int(state.corrections[node]), pressed, happy and node == target, hidden, zeros)
+		_socket(socket_center(node), int(state.corrections[node]), pressed, happy and node == target, hidden)
 		if glow > 0.0 and node == int(change.node):
 			for wire in change.wires:
 				_wire_glow(socket_center(node) + Vector2(0, 1.0 if pressed else 0.0), int(wire.component), bool(wire.present), glow)
-	if level >= 2:
-		_count_marks(model, level >= 3)
+	if leak and model.counts_pairs() and age >= 0.0:
+		_leaving_light(model, routes, age)
+	if happy and model.counts_pairs():
+		_safe_check()
+	if float(anim.get("detail", -1.0)) >= 0.0:
+		# The detailed check counts on the inspection lines its marks come from.
+		for component in model.counted_components():
+			_inspection_line(component, 0.8)
 	if old_leak and age >= 0.0:
 		_leftover_marks(families, residual, teaches_counting)
 		if age >= LEAK_ROUTE_AT:
@@ -403,7 +414,7 @@ func _stripe_pieces(rect: Rect2, direction: int) -> Array:
 	return pieces
 
 
-func _socket(center: Vector2, code: int, pressed: bool, success: bool, hidden: int, zeros := true) -> void:
+func _socket(center: Vector2, code: int, pressed: bool, success: bool, hidden: int) -> void:
 	var x := center.x - 13
 	var y := center.y - 13
 	var s := 26.0
@@ -430,9 +441,9 @@ func _socket(center: Vector2, code: int, pressed: bool, success: bool, hidden: i
 		if code & component:
 			_wire(cap, component, false)
 	# "0": the player's wire cancels the original fault on this socket.
-	if zeros and hidden & code & 1:
+	if hidden & code & 1:
 		_zero_mark(center.x + 6, center.y + 4)
-	if zeros and hidden & code & 2:
+	if hidden & code & 2:
 		_zero_mark(center.x - 10, center.y + 4)
 
 
@@ -598,77 +609,142 @@ func _leftover_marks(families: Array[int], residual: Dictionary, on_lines := tru
 				_diamond(center.x + 12, center.y - 13, 3, GOLD)
 
 
-# A counting lesson's marks: a dashed ring on every leftover socket (fault XOR
-# wiring, red inside, blue outside, so both can share a socket). With counts,
-# each reported colour's inspection line, its marks on the line joined two by
-# two, a solid ring on the one left over, the number of marks at the line's
-# start, and the leftovers off the line dimmed.
-func _count_marks(model, with_counts: bool) -> void:
-	var plan := count_plan(model, with_counts)
-	for component in [1, 2]:
-		var f: Dictionary = FAMILY[component]
-		var r := 15.0 if component == 1 else 18.0
-		for node in plan.rings[component]:
-			var center := socket_center(node)
-			var ring := _oct_points(center.x - r, center.y - r, 2 * r, 2 * r, r * 0.6)
-			ring.append(ring[0])
-			_stroke(ring, Color(f.hi, 0.35 if plan.dim[component].has(node) else 1.0), 1.0, [2.0, 1.5])
+# Lessons 5-7, a leak (the inspection found the colour crossing, on a dark
+# board): the board dims a little, the colour's remaining sockets light up
+# one by one in route order, then its light runs along the real leak route
+# (LeakFeedback, the same chain the old presentation drew) to a warning lamp
+# outside the board, which lights. Reduced motion draws the final frame.
+func _leaving_light(model, routes: Array, age: float) -> void:
 	var c0 := socket_center(0)
-	for component in plan.lines:
-		var f: Dictionary = FAMILY[component]
-		_inspection_line(component, 1.0)
-		for pair in plan.pairs[component]:
-			_pair_link(component, socket_center(pair[0]), socket_center(pair[1]))
-		for node in plan.remainder[component]:
-			var center := socket_center(node)
-			var r := 16.0 if component == 1 else 19.0
-			var ring := _oct_points(center.x - r, center.y - r, 2 * r, 2 * r, r * 0.6)
-			ring.append(ring[0])
-			_stroke(ring, INK, 3.0)
-			_stroke(ring, f.hi, 2.0)
-		# Clear of the line, the rings (a blue ring on socket 0 reaches 19
-		# units) and the other badge.
-		if component == 1:
-			_badge(c0.x - 24, c0.y - 18, plan.counts[component], PAPER)
-		else:
-			_badge(c0.x + 9, c0.y - 26, plan.counts[component], PAPER)
+	_rect(c0.x - 26, c0.y - 26, 2 * PITCH + 52, 2 * PITCH + 52, Color(INK, 0.35 * clampf(age / FLOW_DIM, 0.0, 1.0)))
+	for route in routes:
+		var f: Dictionary = FAMILY[int(route.component)]
+		var order: Array = leaving_sockets(model, route)
+		for i in order.size():
+			if age >= FLOW_MARK_AT + i * FLOW_MARK_STEP:
+				var center := socket_center(int(order[i]))
+				var ring := _oct_points(center.x - 16, center.y - 16, 32, 32, 10)
+				ring.append(ring[0])
+				_stroke(ring, Color(f.hi, 0.35), 5.0)
+				_stroke(ring, INK, 3.0)
+				_stroke(ring, f.hi, 2.0)
+		var travel := clampf((age - leaving_travel_at(order.size())) / FLOW_TRAVEL, 0.0, 1.0)
+		var points: PackedVector2Array = route.points
+		if travel > 0.0:
+			var length := _length(points)
+			_stroke(_slice(points, 0.0, length * travel), INK, 4.0)
+			_stroke(_slice(points, 0.0, length * travel), f.hi, 2.0)
+			if travel < 1.0:
+				var head := _point_at(points, length * travel).round()
+				_plate(head.x - 3.5, head.y - 3.5, 7, 7, 2, WHITE)
+		_warning_lamp(lamp_position(points), int(route.component), travel >= 1.0)
 
 
-# What the marks show, as data (drawn by _count_marks, checked by tests):
-# rings on every leftover of each colour; with counts, the reported colours'
-# lines, their marks on the line in pairs, the one left over, the count, and
-# the leftovers off the reported lines dimmed.
-static func count_plan(model, with_counts: bool) -> Dictionary:
-	var plan := {"rings": {1: [], 2: []}, "dim": {1: [], 2: []}, "lines": [], "pairs": {1: [], 2: []}, "remainder": {1: [], 2: []}, "counts": {1: 0, 2: 0}}
-	var colors: Array[int] = []
-	if with_counts:
-		colors = model.counted_components()
-	for component in [1, 2]:
-		var on_line: Array[int] = model.cut_marks(component)
-		for node in model._residual_support(component):
-			plan.rings[component].append(node)
-			if with_counts and not (colors.has(component) and on_line.has(node)):
-				plan.dim[component].append(node)
-	for component in colors:
-		var marks: Array[int] = model.cut_marks(component)
-		plan.lines.append(component)
-		plan.counts[component] = marks.size()
-		for i in range(0, marks.size() - 1, 2):
-			plan.pairs[component].append([marks[i], marks[i + 1]])
-		if marks.size() % 2 == 1:
-			plan.remainder[component].append(marks[-1])
-	return plan
+# The sockets that light up: the route's own sockets in order, then the
+# colour's other leftovers (fault XOR wiring) on the board.
+static func leaving_sockets(model, route: Dictionary) -> Array:
+	var order: Array = route.qubits.duplicate()
+	for node in model._residual_support(int(route.component)):
+		if not order.has(node):
+			order.append(node)
+	return order
 
 
-# Two marks on an inspection line joined as a pair: a 45-degree bracket on
-# the far side of the line from the board (above the top row, left of the
-# left column).
-func _pair_link(component: int, a: Vector2, b: Vector2) -> void:
+static func leaving_travel_at(sockets: int) -> float:
+	return FLOW_MARK_AT + sockets * FLOW_MARK_STEP + 0.15
+
+
+# The lamp sits outside the board, beyond the route's last point.
+static func lamp_position(points: PackedVector2Array) -> Vector2:
+	var out := (points[-1] - points[-2]).normalized()
+	return points[-1] + out * 14.0
+
+
+func _warning_lamp(center: Vector2, component: int, lit: bool) -> void:
 	var f: Dictionary = FAMILY[component]
-	var bracket := PackedVector2Array([a + Vector2(0, -17), a + Vector2(5, -22), b + Vector2(-5, -22), b + Vector2(0, -17)]) if component == 1 \
-		else PackedVector2Array([a + Vector2(-20, 0), a + Vector2(-25, 5), b + Vector2(-25, -5), b + Vector2(-20, 0)])
-	_stroke(bracket, INK, 3.0)
-	_stroke(bracket, f.hi, 1.5)
+	_plate(center.x - 7, center.y - 7, 14, 14, 4, f.base if lit else NIGHT3)
+	if lit:
+		_cham(center.x - 3, center.y - 3, 6, 6, 2, f.hi)
+		for ray in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+			_stroke(PackedVector2Array([center + ray * 8.0, center + ray * 10.0]), f.hi, 1.5)
+
+
+# A safe check in lessons 5-7: a green check beside the board.
+func _safe_check() -> void:
+	var c0 := socket_center(0)
+	var c8 := socket_center(8)
+	var center := Vector2(c8.x + 18, c0.y - 38)
+	_plate(center.x - 8, center.y - 8, 16, 16, 5, MINT)
+	_stroke(PackedVector2Array([center + Vector2(-4, 0), center + Vector2(-1, 3), center + Vector2(5, -3)]), INK, 2.0)
+
+
+# A small 「？」 on the bubble: a tap there opens the detailed check.
+func _detail_hint(rect: Rect2) -> void:
+	var center := Vector2(rect.end.x - 8, rect.end.y - 7)
+	_plate(center.x - 6, center.y - 6, 12, 12, 3, GOLD)
+	_text("？", center.x * U, (center.y - 5.2) * U, INK, "center")
+
+
+# The detailed check (lessons 5-7, a bubble tap on a dark board's result):
+# a small window per reported colour where the legend was. Each leftover on
+# that colour's inspection line (fault XOR wiring: red top row, blue left
+# column) flies from its socket into the window as a particle; particles
+# vanish two by two; one left over turns the window into a warning, none
+# makes it green. Reduced motion draws the final frame.
+func _check_windows(model, age: float, reduced: bool) -> void:
+	if reduced:
+		age = DETAIL_DONE
+	var colors: Array[int] = model.counted_components()
+	var width := 54.0
+	var left := 97.5 - (colors.size() * width + (colors.size() - 1) * 6.0) * 0.5
+	for index in colors.size():
+		var component: int = colors[index]
+		var f: Dictionary = FAMILY[component]
+		var marks: Array[int] = model.cut_marks(component)
+		var plan := detail_plan(marks.size(), age)
+		var x := left + index * (width + 6.0)
+		var y := 284.0
+		var border: Color = RED_HI if plan.warning else (MINT if plan.green else f.lo)
+		_plate(x, y, width, 26, 4, NIGHT2, border)
+		# The inspection line this window counts: a short dashed stub.
+		if component == 1:
+			_stroke(PackedVector2Array([Vector2(x + 4, y + 13), Vector2(x + 12, y + 13)]), f.hi, 1.2, [2.0, 1.5])
+		else:
+			_stroke(PackedVector2Array([Vector2(x + 8, y + 6), Vector2(x + 8, y + 20)]), f.hi, 1.2, [2.0, 1.5])
+		for i in marks.size():
+			var slot := Vector2(x + 20 + i * 9, y + 13)
+			var flight: float = plan.flights[i]
+			if flight <= 0.0:
+				continue
+			var eased := 1.0 - pow(1.0 - flight, 3.0)
+			var position := socket_center(marks[i]).lerp(slot, eased)
+			var gone: float = plan.vanish[i]
+			if gone >= 1.0:
+				continue
+			_diamond(position.x, position.y, 3.0 * (1.0 - gone), f.hi)
+		for pair in int(marks.size() / 2.0):
+			var shown: float = plan.vanish[pair * 2]
+			if shown > 0.0 and shown < 1.0:
+				_stroke(PackedVector2Array([Vector2(x + 20 + pair * 18, y + 13), Vector2(x + 29 + pair * 18, y + 13)]), WHITE, 1.0)
+		if plan.warning:
+			_text("!", (x + width - 7) * U, (y + 6.5) * U, RED_HI, "center", true)
+		elif plan.green:
+			var center := Vector2(x + width - 9, y + 13)
+			_stroke(PackedVector2Array([center + Vector2(-4, 0), center + Vector2(-1, 3), center + Vector2(5, -3)]), MINT, 2.0)
+
+
+# When each particle flies (0..1), when it vanishes in its pair (0..1), and
+# the window's result, for a count of marks at an age (data; tests check it).
+static func detail_plan(count: int, age: float) -> Dictionary:
+	var flights: Array[float] = []
+	var vanish: Array[float] = []
+	var arrived := DETAIL_FLY_AT + count * DETAIL_FLY_STEP + DETAIL_FLY
+	for i in count:
+		flights.append(clampf((age - DETAIL_FLY_AT - i * DETAIL_FLY_STEP) / DETAIL_FLY, 0.0, 1.0))
+		var pair := int(i / 2.0)
+		vanish.append(0.0 if i == count - 1 and count % 2 == 1 else clampf((age - arrived - pair * DETAIL_PAIR) / DETAIL_PAIR, 0.0, 1.0))
+	var settled := age >= arrived + int(count / 2.0) * DETAIL_PAIR + 0.2
+	return {"flights": flights, "vanish": vanish, "warning": settled and count % 2 == 1, "green": settled and count % 2 == 0}
 
 
 # Each floor watching leftovers shows how many it sees (even, so dark); the

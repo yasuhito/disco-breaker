@@ -33,12 +33,10 @@ const PRESS_TIME := 0.15
 # wire glows, floors it turned dark get a gold outline and floors it newly lit
 # an outline in their own colour, all fading out (seconds).
 const CHANGE_TIME := 0.45
-# Lesson 5's first leak is explained step by step; input stays available,
-# any later action ends it, a bubble tap moves on or replays. Each step stays
-# long enough to read: 0.2 s per character (about 5 a second, a slow young
-# reader's pace), at least 2.5 s.
-const EXPLAIN_STEP := 2.5
-const EXPLAIN_PER_CHARACTER := 0.2
+# Lessons 5-7: a bubble tap on a check's result shows the optional detailed
+# check (the leftovers on the inspection lines, vanishing two by two) over
+# this time (seconds); a later action ends it, another tap replays it.
+const DETAIL_TIME := 3.6
 
 var model := Tutorial.new()
 var at_title := true
@@ -96,13 +94,8 @@ var _changed_wires: Array[Dictionary] = []
 var _change_node := -1
 var _change_age := SETTLED
 var _change_sequence := -1
-var _explain_sequence := -1
-var _explain_age := 0.0
-var _explain_steps: PackedStringArray = []
-# The current full explanation has been shown up to its count; recorded in
-# the model once a later action in the same lesson ends it.
-var _explain_reached := false
-var _explain_stage_id := ""
+var _detail_sequence := -1
+var _detail_age := DETAIL_TIME
 # The title press has its own player, so nothing that stops lesson audio on
 # entry can cut it; only mute does.
 var _press_audio := AudioStreamPlayer.new()
@@ -157,13 +150,9 @@ func _process(delta: float) -> void:
 		queue_redraw()
 	if counting and not _counting():
 		_finish_counting()
-	# Runs in reduced motion too: only the words change.
-	if _explaining() and _explain_age < _explain_start(_explain_steps.size()):
-		var step := _explain_step()
-		_explain_age += delta
-		if _explain_step() != step:
-			_note_explain_progress()
-			_publish_semantics()
+	if _detailing() and _detail_age < DETAIL_TIME:
+		_detail_age += delta
+		queue_redraw()
 	# Runs in reduced motion too, where the outline is static and then gone.
 	if _change_age < CHANGE_TIME:
 		_change_age += delta
@@ -266,55 +255,19 @@ func semantic_state() -> Dictionary:
 	# Continue is shown disabled and ignores taps.
 	state["counting"] = _counting()
 	state["continue_enabled"] = model.can_continue() and not state.counting
-	state["explain_step"] = _explain_step()
-	state["explain_steps"] = _explain_steps.size() if _explaining() else 0
+	state["check_detail"] = _detailing()
 	return state
 
 
-# A full explanation counts as shown once its count step is on screen.
-func _note_explain_progress() -> void:
-	if _explain_steps.size() > 2 and _explain_step() >= _explain_steps.size() - 2:
-		_explain_reached = true
+# The detailed check is offered on a lesson 5-7 check's result (a dark,
+# inspected board, once the foreman has checked).
+func _detail_available() -> bool:
+	return not at_title and model.counts_pairs() and not model.inspection.is_empty() and model.is_dark() and not _counting()
 
 
-# The explanation belongs to one inspected board; any later action ends it.
-func _explaining() -> bool:
-	return not at_title and not _explain_steps.is_empty() and model.trace.size() == _explain_sequence
-
-
-# The step being shown, or -1 (none, or the foreman is still checking).
-func _explain_step() -> int:
-	if not _explaining() or _explain_age < 0.0:
-		return -1
-	var step := 0
-	while step < _explain_steps.size() - 1 and _explain_age >= _explain_start(step + 1):
-		step += 1
-	return step
-
-
-# When a step of the current explanation starts (seconds after the check).
-func _explain_start(step: int) -> float:
-	var start := 0.0
-	for i in mini(step, _explain_steps.size()):
-		start += step_seconds(_explain_steps[i])
-	return start
-
-
-static func step_seconds(text: String) -> float:
-	return maxf(EXPLAIN_STEP, text.replace("\n", "").length() * EXPLAIN_PER_CHARACTER)
-
-
-# How much of the counting lesson's teaching the board shows for this check:
-# 0 the original fault, 1 cancelled sockets, 2 leftover marks, 3 the counts.
-func _teach_level() -> int:
-	if _counting():
-		return -1
-	if _explaining():
-		var step := _explain_step()
-		if step < 0:
-			return -1
-		return step if _explain_steps.size() > 2 else 3
-	return 3
+# It belongs to the board it was opened on; any later action ends it.
+func _detailing() -> bool:
+	return _detail_available() and model.trace.size() == _detail_sequence
 
 
 func _handle_design_tap(point: Vector2) -> void:
@@ -332,11 +285,10 @@ func _handle_design_tap(point: Vector2) -> void:
 	if HOME_RECT.has_point(point):
 		_show_title()
 		return
-	# The explanation's bubble: a tap shows the next step, or replays it.
-	if _explaining() and _explain_step() >= 0 and Lesson.px(Lesson.BUBBLE).has_point(point):
-		var step := _explain_step()
-		_explain_age = _explain_start(step + 1) if step < _explain_steps.size() - 1 else 0.0
-		_note_explain_progress()
+	# The bubble on a check's result opens (or replays) the detailed check.
+	if _detail_available() and Lesson.px(Lesson.BUBBLE).has_point(point):
+		_detail_sequence = model.trace.size()
+		_detail_age = DETAIL_TIME if reduced_motion else 0.0
 		_publish_semantics()
 		queue_redraw()
 		return
@@ -460,8 +412,7 @@ func _settle_animations() -> void:
 	_leak_age = SETTLED
 	_count_age = SETTLED
 	_change_age = SETTLED
-	# A resumed explanation shows its last word, already settled.
-	_explain_age = _explain_start(_explain_steps.size())
+	_detail_age = DETAIL_TIME
 	_pending_reward = ""
 	_pending_leak_sound = false
 
@@ -497,7 +448,8 @@ func _draw() -> void:
 		"since_enable": _enable_age, "since_press": _tap_age, "pressed_node": _tap_node_index,
 		"leak_age": _leak_age, "routes": _leak_routes,
 		"counting": _count_age if _counting() else -1.0,
-		"teach_level": _teach_level(), "spoken": _spoken(semantic_state()),
+		"spoken": _spoken(semantic_state()), "detail": _detail_age if _detailing() else -1.0,
+		"detail_offered": _detail_available() and not _detailing(),
 		"change": {"node": _change_node, "darkened": _darkened, "lit": _lit, "wires": _changed_wires, "age": _change_age} if _showing_change() else {},
 	})
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -537,29 +489,6 @@ func _publish_semantics() -> void:
 			and _definition.lines.has("call") and int(_state.action_count) != _count_sequence:
 		_count_sequence = int(_state.action_count)
 		_count_age = 0.0
-	# An explanation that reached its count and was then ended by an action in
-	# the same lesson counts as shown: a later leak repeats only the count.
-	if _explain_reached and model.trace.size() != _explain_sequence:
-		_explain_reached = false
-		var after: Dictionary = model.trace[-1]
-		if String(after.stage_id) == _explain_stage_id and String(after.action) in ["tap_node", "inspect"]:
-			model.mark_leak_explained()
-	# Lesson 5 explains a leak step by step once the foreman has checked.
-	if not at_title and last.get("action", "") == "inspect" and int(_state.action_count) != _explain_sequence \
-			and model.counts_pairs() and _definition.lines.has("steps") and not bool(model.inspection.get("safe", true)):
-		_explain_sequence = int(_state.action_count)
-		_explain_stage_id = String(_definition.id)
-		_explain_reached = false
-		_explain_steps = PackedStringArray()
-		if not model.leak_explained:
-			for line in _definition.lines.steps:
-				_explain_steps.append(String(line))
-			# Say honestly when this board has nothing that cancels yet.
-			if model.cancelled_sockets().is_empty():
-				_explain_steps[1] = String(_definition.lines.steps_no_cancel)
-		_explain_steps.append(model.count_summary())
-		_explain_steps.append(String(model.utterance().text))
-		_explain_age = -COUNT_TIME if _counting() else 0.0
 	if not _counting():
 		_pending_reward = ""
 		_pending_leak_sound = false
@@ -619,8 +548,8 @@ func _publish_semantics() -> void:
 func _spoken(state: Dictionary) -> String:
 	if state.get("counting", false):
 		return String(_definition.lines.call)
-	if int(state.get("explain_step", -1)) >= 0:
-		return _explain_steps[int(state.explain_step)]
+	if state.get("check_detail", false):
+		return Tutorial.CHECK_DETAIL
 	return String(state.utterance.text)
 
 

@@ -163,22 +163,6 @@ func _test_leak_without_counting() -> void:
 		_expect(not rings.is_empty() and not route.is_empty(), "%s: the leftover rings and the leak route stay" % name)
 
 
-# A counting lesson's board as drawn at a teaching level (as the view passes
-# it), with the marks' data plan behind it.
-func _marks(model: Tutorial, level := 3) -> Dictionary:
-	var probe := _render(model, _anim(0.0, true, {"routes": _routes(model), "leak_age": 10.0, "teach_level": level}))
-	var texts := _texts(probe)
-	var lines := {}
-	for component in [1, 2]:
-		lines[component] = not _strokes(probe, Color(Lesson.RED_HI if component == 1 else Lesson.BLUE_HI, 1.0), 1.2 * Lesson.U).is_empty()
-	var revealed: bool = not model.inspection.is_empty() or model.fault_revealed()
-	return {"probe": probe, "texts": texts, "lines": lines,
-		"plan": Lesson.count_plan(model, level >= 3 and not model.inspection.is_empty()) if level >= 2 else {},
-		"badges": texts.filter(func(text): return text.length() == 1 and text.is_valid_int()),
-		"fault": texts.has("破線は元の故障、実線は自分の配線") and revealed,
-		"zeros": _shapes(probe, Lesson.PAPER).filter(func(shape): return shape.size() == 4 and is_equal_approx(_bounds(shape).size.x, 3.0 * Lesson.U) and is_equal_approx(_bounds(shape).size.y, 5.0 * Lesson.U)).size()}
-
-
 func _at_lesson(stage: int, wiring := {}, inspect := true, phase := 0) -> Tutorial:
 	var model := Tutorial.new()
 	model.stage_index = stage
@@ -190,84 +174,160 @@ func _at_lesson(stage: int, wiring := {}, inspect := true, phase := 0) -> Tutori
 	return model
 
 
+# A lesson 5-7 board as drawn at a time into its leak presentation.
+func _check_board(model: Tutorial, age := 10.0, reduced := false, extra := {}) -> Dictionary:
+	var anim := {"routes": _routes(model), "leak_age": age}
+	anim.merge(extra, true)
+	var probe := _render(model, _anim(0.0, reduced, anim))
+	var lamps := {}
+	var routes := {}
+	for route in _routes(model):
+		var center: Vector2 = Lesson.lamp_position(route.points) * Lesson.U
+		var lit := _shapes(probe, Lesson.FAMILY[int(route.component)].base).filter(func(shape): return _bounds(shape).get_center().distance_to(center) < 1.0)
+		lamps[int(route.component)] = not lit.is_empty()
+		routes[int(route.component)] = route
+	var rings := {1: [], 2: []}
+	for component in [1, 2]:
+		var hi: Color = Lesson.FAMILY[component].hi
+		for node in 9:
+			var center := Lesson.socket_center(node) * Lesson.U
+			var found := _strokes(probe, hi, 2.0 * Lesson.U).filter(func(points): return points.size() == 9 and _bounds(points).get_center().distance_to(center) < 1.0 and is_equal_approx(_bounds(points).size.x, 32.0 * Lesson.U))
+			if not found.is_empty():
+				rings[component].append(node)
+	var trails := {}
+	for component in [1, 2]:
+		trails[component] = _strokes(probe, Lesson.FAMILY[component].hi, 2.0 * Lesson.U).filter(func(points): return points.size() != 9).size()
+	var dimmed := _shapes(probe, Color(Lesson.INK, 0.35)).size() > 0
+	return {"probe": probe, "texts": _texts(probe), "lamps": lamps, "routes": routes, "rings": rings, "trails": trails, "dimmed": dimmed,
+		"check": _shapes(probe, Lesson.MINT).filter(func(shape): return is_equal_approx(_bounds(shape).size.x, 14.0 * Lesson.U)).size() > 0,
+		"legend": _shapes(probe, Lesson.GROUT).filter(func(shape): return _bounds(shape).position.y > (Lesson.LEGEND_Y - 8) * Lesson.U).size() > 0}
+
+
+# Lessons 5-7, a check's result: on a leak, the leaving colour's remaining
+# sockets light up in route order and its light runs along the real
+# LeakFeedback route to a lamp outside the board; a safe board shows a green
+# check and no light, also when its top row holds a pair of marks; no
+# original fault, counts or repair hint is shown.
+func _test_visual_check() -> void:
+	var start := _at_lesson(4, {}, false)
+	var before := _check_board(start)
+	_expect(before.routes.is_empty() and before.rings[1].is_empty() and not before.check and before.legend, "lesson 5 before a check: nothing shown, the legend in place")
+	var trap := _at_lesson(4)
+	var route: Dictionary = _routes(trap)[0]
+	_expect(Lesson.leaving_sockets(trap, route) == [1, 4, 7], "the trap's leaving sockets are its red leftovers 1, 4, 7, in route order")
+	var dim := _check_board(trap, 0.1)
+	_expect(dim.rings[1].is_empty() and dim.trails[1] == 0 and not dim.lamps[1], "first only the board dims")
+	var first := _check_board(trap, Lesson.FLOW_MARK_AT + 0.01)
+	_expect(first.rings[1] == [1] and not first.lamps[1], "then the remaining sockets light one by one")
+	var all := _check_board(trap, Lesson.leaving_travel_at(3) - 0.01)
+	_expect(_sorted(all.rings[1]) == [1, 4, 7] and all.trails[1] == 0, "all three before the light travels")
+	var travel := _check_board(trap, Lesson.leaving_travel_at(3) + Lesson.FLOW_TRAVEL * 0.5)
+	_expect(travel.trails[1] > 0 and not travel.lamps[1], "the light travels along the route")
+	var lit := _check_board(trap)
+	_expect(lit.lamps[1] and lit.trails[1] > 0 and not lit.legend and not lit.texts.has("破線は元の故障、実線は自分の配線"), "then the lamp outside the board lights; no original fault is shown")
+	var lamp: Vector2 = Lesson.lamp_position(route.points)
+	var c0 := Lesson.socket_center(0)
+	var c8 := Lesson.socket_center(8)
+	_expect(lamp.y > c8.y + 30 and lamp.x - 10 > 0 and lamp.x + 10 < 195, "the red lamp is outside the board, on the screen")
+	_expect(not lit.texts.any(func(text): return text.contains("こ") or text.contains("漏電")), "no counts and no 「漏電」 on the board")
+	var still := _check_board(trap, 0.0, true)
+	_expect(still.lamps[1] and _sorted(still.rings[1]) == [1, 4, 7] and still.trails[1] > 0, "reduced motion draws the final frame at once")
+	# Lesson 5 leaking through blue only: blue lights and leaves, red does not.
+	var blue := _at_lesson(4, {1: Tutorial.EMPTY, 7: Tutorial.EMPTY, 3: Tutorial.BLUE, 4: Tutorial.BOTH, 5: Tutorial.BLUE})
+	var blue_board := _check_board(blue)
+	_expect(blue_board.routes.keys() == [2] and blue_board.lamps[2] and _sorted(blue_board.rings[2]) == [3, 4, 5] and blue_board.rings[1].is_empty(), "a blue leak lights blue and its lamp only")
+	var blue_lamp: Vector2 = Lesson.lamp_position(blue_board.routes[2].points)
+	_expect(blue_lamp.x > c8.x + 30 and blue_lamp.x + 11 <= 195, "the blue lamp is right of the board, on the screen")
+	# The safe alternative with two marks on the top row: no light, a green check.
+	var loop := _at_lesson(4, {1: Tutorial.RED, 2: Tutorial.RED, 5: Tutorial.RED, 7: Tutorial.EMPTY})
+	var loop_board := _check_board(loop)
+	_expect(loop.passed() and loop.cut_marks(1).size() == 2 and loop_board.routes.is_empty() and loop_board.trails[1] == 0 and loop_board.check, "a safe board with a pair on the top row shows the green check, no leaving light")
+	_expect(not loop_board.dimmed and _check_board(trap).dimmed, "a safe board is not dimmed; a leak is")
+	var canonical := _at_lesson(4, {1: Tutorial.EMPTY, 7: Tutorial.EMPTY, 4: Tutorial.RED})
+	_expect(canonical.passed() and _check_board(canonical).check, "the canonical repair shows the green check")
+	# Lesson 7: both colours leave, each to its lamp.
+	var both := _at_lesson(6, {1: Tutorial.BOTH, 7: Tutorial.RED, 0: Tutorial.BLUE})
+	var both_board := _check_board(both)
+	_expect(both_board.routes.size() == 2 and both_board.lamps[1] and both_board.lamps[2], "lesson 7: red and blue both leave, both lamps light")
+	# Lesson 6 (automatic): the same on its own result.
+	var edge := _at_lesson(5, {3: Tutorial.RED, 6: Tutorial.RED}, false, 0)
+	_expect(not bool(edge.inspection.safe) and _check_board(edge).lamps[1], "lesson 6's automatic result shows the same leaving light")
+	# A lit board shows nothing.
+	var lit_board := _at_lesson(6, {4: Tutorial.RED}, false)
+	var nothing := _check_board(lit_board)
+	_expect(not lit_board.is_dark() and nothing.routes.is_empty() and not nothing.check, "a lit board shows no result")
+	# The light leaves only for a colour the inspection finds crossing, on a
+	# dark board. Dark boards are built directly: a colour's leftovers are a
+	# random sum of the other colour's floors (they never light its own) plus,
+	# at random, its leaving string (red: column 1-4-7, blue: row 3-4-5).
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20261104
+	var leaking := 0
+	var safe_with_leftovers := 0
+	for sample in 600:
+		var model := Tutorial.new()
+		model.stage_index = [4, 5, 6][sample % 3]
+		model.boundary_phase = (sample / 3) % 2 if model.stage_index == 5 else 0
+		model._reset_stage()
+		var d := model.definition()
+		var leftover := {1: {}, 2: {}}
+		for component in [1, 2]:
+			var generators: Array = d.blue_faces if component == 1 else d.red_faces
+			for face in generators:
+				if rng.randi() % 2:
+					for node in face.nodes:
+						leftover[component][node] = not leftover[component].get(node, false)
+			if rng.randi() % 2:
+				for node in ([1, 4, 7] if component == 1 else [3, 4, 5]):
+					leftover[component][node] = not leftover[component].get(node, false)
+		for node in 9:
+			var value := int(d.hidden.get(node, 0))
+			for component in [1, 2]:
+				if leftover[component].get(node, false):
+					value ^= component
+			model.corrections[node] = value
+		_expect(model.is_dark(), "fixture: a built board is dark")
+		model.inspection = model._inspect_residual()
+		var families: Array = _routes(model).map(func(route): return int(route.component))
+		var expected: Array = []
+		if model.inspection.red_crossing:
+			expected.append(1)
+		if model.inspection.blue_crossing:
+			expected.append(2)
+		_expect(families == expected, "the light leaves exactly for the crossing colours")
+		leaking += 1 if not expected.is_empty() else 0
+		if model.inspection.safe and (not model._residual_support(1).is_empty() or not model._residual_support(2).is_empty()):
+			safe_with_leftovers += 1
+			model.touched = true
+			_expect(String(model.utterance().text) == String(model.definition().lines.ok), "a safe board with leftovers passes with its plain words")
+			_expect(_check_board(model).check and _check_board(model).routes.is_empty(), "and shows the green check without any leaving light")
+	_expect(leaking > 100 and safe_with_leftovers > 100, "the sample covers leaks and safe boards with leftovers")
+
+
+# The detailed check's plan, from real counts: particles fly in one after
+# another, pairs vanish, one left over warns, none is green.
+func _test_check_detail_plan() -> void:
+	for case in [[0, false, true], [1, true, false], [2, false, true], [3, true, false]]:
+		var final := Lesson.detail_plan(case[0], Lesson.DETAIL_DONE)
+		_expect(final.warning == case[1] and final.green == case[2], "%d marks: %s" % [case[0], "one left warns" if case[1] else "nothing left is green"])
+		var gone: Array = final.vanish.filter(func(value): return value >= 1.0)
+		_expect(gone.size() == case[0] - case[0] % 2 and final.flights.all(func(value): return value >= 1.0), "%d marks: every particle arrived, %d vanished in pairs" % [case[0], case[0] - case[0] % 2])
+	var early := Lesson.detail_plan(2, Lesson.DETAIL_FLY_AT + 0.1)
+	_expect(early.flights[0] > 0.0 and early.flights[1] == 0.0 and not early.green, "particles fly in one after another")
+	_expect(Lesson.DETAIL_DONE <= View.DETAIL_TIME, "the view's detail time covers the plan")
+
+
 func _sorted(values: Array) -> Array:
 	var copy := values.duplicate()
 	copy.sort()
 	return copy
 
 
-# Lessons 5-7: leftover marks only on real leftovers (fault XOR wiring, also
-# where a fault has no wire), counts only as a check's result, pairs and the
-# one left over on each reported line, the other colour whenever it fails,
-# and none of the old leak route, cracks or floor counts.
-func _test_counting_lessons() -> void:
-	var start := _at_lesson(4, {}, false)
-	var before := _marks(start)
-	_expect(not before.texts.has("破線は元の故障、実線は自分の配線") and not before.lines[1] and before.badges.is_empty(), "lesson 5 before a check: nothing revealed, nothing counted")
-	var trap := _at_lesson(4)
-	var step0 := _marks(trap, 0)
-	_expect(step0.fault and not step0.lines[1] and step0.badges.is_empty(), "step 1: only the original fault")
-	var step2 := _marks(trap, 2)
-	_expect(_sorted(step2.plan.rings[1]) == [1, 4, 7] and step2.plan.rings[2].is_empty() and not step2.lines[1] and step2.badges.is_empty(), "step 3: marks on the leftovers 1, 4, 7 (4 has the fault and no wire), no counts yet")
-	var full := _marks(trap)
-	_expect(full.plan.lines == [1] and full.lines[1] and not full.lines[2] and full.badges == ["1"] and full.plan.pairs[1].is_empty() and full.plan.remainder[1] == [1] and _sorted(full.plan.dim[1]) == [4, 7], "step 4: the top row's one mark, unpaired and left over; the others dimmed")
-	_expect(full.texts.count("2") == 0 and _strokes(full.probe, Lesson.RED_HI, 2.0 * Lesson.U).filter(func(points): return points.size() > 9).is_empty(), "no old leak route or floor counts in lesson 5")
-	# After the leak, editing: the centre's red cancels its fault (a 「0」, no mark).
-	var cancelled := _at_lesson(4)
-	_wire(cancelled, {4: Tutorial.RED})
-	var editing := _marks(cancelled)
-	_expect(cancelled.inspection.is_empty() and editing.fault and editing.zeros >= 1 and not editing.plan.rings[1].has(4) and _sorted(editing.plan.rings[1]) == _sorted(Array(cancelled._residual_support(1))) and editing.plan.lines.is_empty() and not editing.lines[1] and editing.badges.is_empty(), "after the leak, editing keeps the fault, the 「0」 where it cancels and marks on the real leftovers, without counts")
-	# The safe loop alternative: two marks on the top row, one pair, nothing left.
-	var loop := _at_lesson(4, {1: Tutorial.RED, 2: Tutorial.RED, 5: Tutorial.RED, 7: Tutorial.EMPTY})
-	var pair := _marks(loop)
-	_expect(loop.passed() and pair.lines[1] and pair.badges == ["2"] and pair.plan.pairs[1] == [[1, 2]] and pair.plan.remainder[1].is_empty(), "a safe alternative shows its two marks joined as one pair")
-	# Lesson 5 leaking through blue only: blue is counted and drawn too.
-	var blue := _at_lesson(4, {1: Tutorial.EMPTY, 7: Tutorial.EMPTY, 3: Tutorial.BLUE, 4: Tutorial.BOTH, 5: Tutorial.BLUE})
-	var blue_marks := _marks(blue)
-	_expect(not bool(blue.inspection.safe) and blue_marks.plan.lines == [1, 2] and blue_marks.lines[2] and _sorted(blue_marks.plan.rings[2]) == [3, 4, 5] and blue_marks.plan.remainder[2] == [3] and blue_marks.plan.counts[1] == 0, "the failing blue is shown on the left column beside red's zero")
-	# Lesson 6: each part's result counts its own colour.
-	var edge := _at_lesson(5, {0: Tutorial.RED}, false, 0)
-	var edge_marks := _marks(edge)
-	_expect(edge.passed() and edge_marks.plan.lines == [1] and edge_marks.lines[1] and not edge_marks.lines[2] and edge_marks.badges == ["0"], "lesson 6 red: the top row counts zero marks")
-	var edge_blue := _at_lesson(5, {2: Tutorial.BLUE}, false, 1)
-	var edge_blue_marks := _marks(edge_blue)
-	_expect(edge_blue.passed() and edge_blue_marks.plan.lines == [2] and edge_blue_marks.lines[2] and not edge_blue_marks.lines[1] and edge_blue_marks.badges == ["0"], "lesson 6 blue: the left column counts zero marks")
-	# The count badges stay clear of every ring, even a blue remainder ring on socket 0.
-	var corner := _at_lesson(6, {4: Tutorial.RED, 0: Tutorial.BLUE, 1: Tutorial.BLUE})
-	var corner_plan := Lesson.count_plan(corner, true)
-	_expect(corner_plan.remainder[2] == [0], "fixture: a blue remainder ring on socket 0")
-	var drawn := _render(corner, _anim(0.0, true, {"teach_level": 3}))
-	var plates := _shapes(drawn, Lesson.PAPER).filter(func(shape): var box := _bounds(shape); return is_equal_approx(box.size.x, 8.0 * Lesson.U) and is_equal_approx(box.size.y, 8.0 * Lesson.U))
-	var octagon := func(point: Vector2) -> bool:
-		var d := (point / Lesson.U - Lesson.socket_center(0)).abs()
-		return d.x <= 19.0 + 1.0 and d.y <= 19.0 + 1.0 and d.x + d.y <= 38.0 - 0.6 * 19.0 + 2.0
-	_expect(plates.size() == 2, "both count badges are drawn")
-	for plate in plates:
-		_expect(Array(plate).all(func(point): return not octagon.call(point)), "a count badge clears socket 0's rings")
-		_expect(_bounds(plate).end.y < Lesson.socket_center(0).y * Lesson.U - 1.0 or _bounds(plate).end.x < Lesson.socket_center(0).x * Lesson.U - 1.0 or _bounds(plate).position.x > Lesson.socket_center(0).x * Lesson.U + 1.0, "a count badge stays off the line through socket 0")
-	# Lesson 7 counts both colours on a leak.
-	var practice := _at_lesson(6, {1: Tutorial.RED, 2: Tutorial.BLUE, 7: Tutorial.RED})
-	var practice_marks := _marks(practice)
-	_expect(not bool(practice.inspection.safe) and practice_marks.plan.lines == [1, 2] and practice_marks.lines[1] and practice_marks.lines[2] and practice_marks.badges.size() == 2, "lesson 7: both lines are counted")
-	# A lit board never shows counts or a zero.
-	var lit := _at_lesson(6, {4: Tutorial.RED}, false)
-	var lit_marks := _marks(lit)
-	_expect(not lit.is_dark() and not lit_marks.lines[1] and not lit_marks.lines[2] and lit_marks.badges.is_empty(), "a lit board shows no counts")
-	# No 「漏電」 anywhere in lessons 5-7.
-	for model in [start, trap, cancelled, loop, blue, edge, edge_blue, practice, lit]:
-		for text in _marks(model).texts + [String(model.utterance().text), model.count_summary()]:
-			_expect(not String(text).contains("漏電"), "lesson %d shows no 「漏電」: %s" % [model.stage_index + 1, text])
-
-
-# Lesson 5's first leak is explained step by step after the check: each step
-# its own line, a later action ends it, the bubble moves on or replays it,
-# home settles it, a second leak repeats only the count and the hint, and
-# reduced motion goes through the same words.
-func _next_step(view) -> void:
-	view._process(view._explain_start(view._explain_step() + 1) - view._explain_age + 0.001)
-
-
-func _test_explanation(view) -> void:
+# The detailed check in the view: offered only on a dark board's result once
+# the foreman has checked, opened and replayed by a bubble tap, spoken in its
+# own words, ended by any later action, settled by home, final at once in
+# reduced motion; the verdict and speech of the result stay as they are.
+func _test_check_detail(view) -> void:
 	var reset := func() -> void:
 		view.model.stage_index = 4
 		view.model.boundary_phase = 0
@@ -279,128 +339,86 @@ func _test_explanation(view) -> void:
 	var call := func() -> void:
 		view._handle_design_tap(View.PRIMARY_RECT.get_center())
 		view._publish_semantics()
+	var bubble := Lesson.px(Lesson.BUBBLE).get_center()
 	var spoken := func() -> String:
 		return view._spoken(view.semantic_state())
-	var steps: Array = view.model.stages()[4].lines.steps
 	view.reduced_motion = false
 	view._muted = true
 	reset.call()
+	_expect(not view._detail_available(), "nothing to detail before a check")
+	var untouched: int = view.model.trace.size()
+	view._handle_design_tap(bubble)
+	_expect(not view.semantic_state().check_detail and view.model.trace.size() == untouched, "a bubble tap before a check does nothing")
 	call.call()
-	_expect(view.semantic_state().counting and spoken.call() == "電気がもれていないか、\nチェックするよ！", "the check comes first")
-	view._process(View.COUNT_TIME + 0.01)
-	var said: Array[String] = [spoken.call()]
-	for step in 4:
-		_next_step(view)
-		said.append(spoken.call())
-	var full: Array[String] = [steps[0], "同じ場所に同じ色を置くと、\n打ち消せるよ。\nこの盤面には、まだないね。", steps[2], "上の段の赤い印は1こ。\n組にならず、1こあまり。", "あまりがあると危ないよ。\n上と下を外して、\n真ん中に赤を置こう！"]
-	_expect(said == full, "the steps: fault, cancelling (none on this board yet), marks, the count, the trap's hint")
-	# Each step stays long enough to read: 0.2 s a character, at least 2.5 s.
-	for i in full.size():
-		_expect(is_equal_approx(view._explain_start(i + 1) - view._explain_start(i), maxf(2.5, full[i].replace("\n", "").length() * 0.2)), "step %d stays for its reading time" % i)
-	_expect(view._explain_start(2) - view._explain_start(1) >= 6.0, "the longest step (35 characters) stays at least 6 s")
-	view._process(30.0)
-	_expect(spoken.call() == String(view.model.utterance().text) and view.semantic_state().explain_step == 4, "the last word stays")
-	# The bubble replays from the start, and moves on step by step.
-	var bubble := Lesson.px(Lesson.BUBBLE).get_center()
+	_expect(view.semantic_state().counting and not view._detail_available(), "not while the foreman checks")
+	view._process(View.COUNT_TIME + 0.05)
+	view._publish_semantics()
+	_expect(spoken.call() == "あっ、まだ赤い電気が\n外へ抜けているよ！" and view._detail_available(), "the leak is spoken, and the detail is offered")
+	_expect(view._leak_routes.size() == 1 and int(view._leak_routes[0].component) == 1 and view._leak_routes[0].qubits == [1, 4, 7], "the view's leaving route is the red chain 1-4-7")
+	var trace_size: int = view.model.trace.size()
 	view._handle_design_tap(bubble)
-	_expect(view.semantic_state().explain_step == 0 and spoken.call() == steps[0], "a tap on the bubble replays the explanation")
+	_expect(view.semantic_state().check_detail and spoken.call() == Tutorial.CHECK_DETAIL and view._detail_age == 0.0, "a bubble tap opens the detailed check with its words")
+	_expect(view.model.trace.size() == trace_size and view.model.utterance().kind == "unsafe", "it changes no game state")
+	view._process(1.0)
 	view._handle_design_tap(bubble)
-	_expect(view.semantic_state().explain_step == 1, "a tap on the bubble moves to the next step")
-	_expect(view.model.trace.size() == view._explain_sequence and not view.model.inspection.is_empty(), "the bubble changes no game state")
-	# Home settles it; resume shows the last word.
+	_expect(view._detail_age == 0.0, "another tap replays it")
 	view._show_title()
 	view._open_tutorial()
-	_expect(view.semantic_state().explain_step == 4 and spoken.call() == String(view.model.utterance().text), "home and resume settle on the last word")
 	view._navigation_guard_until = 0
-	# A board edit ends it at once.
+	_expect(view.semantic_state().check_detail and view._detail_age >= View.DETAIL_TIME, "home settles it")
 	view._handle_design_tap(Lesson.socket_center(0) * 2.0)
 	view._publish_semantics()
-	_expect(view.semantic_state().explain_step == -1 and view.model.utterance().kind == "mistake" and spoken.call() == String(view.model.utterance().text), "an edit ends the explanation; the hint follows the board")
-	view._handle_design_tap(bubble)
-	_expect(view.semantic_state().explain_step == -1, "the bubble does nothing without an explanation")
-	_expect(view.model.leak_explained, "an explanation shown to its count and ended by an edit counts as shown")
-	# A second leak: only the count and the hint.
+	_expect(not view.semantic_state().check_detail and view.model.utterance().kind == "mistake", "an edit ends it")
 	for tap in 3:
 		view._handle_design_tap(Lesson.socket_center(0) * 2.0)
 	view._publish_semantics()
 	call.call()
-	view._process(View.COUNT_TIME + 0.01)
-	_expect(view.semantic_state().explain_steps == 2 and spoken.call() == "上の段の赤い印は1こ。\n組にならず、1こあまり。", "a second leak repeats the count")
-	_next_step(view)
-	_expect(spoken.call() == "まだ電気がもれているよ。\nあまった印が\nなくなるように直そう。", "then its hint")
-	# A check cut short by an edit before any explanation, the trap restored
-	# and checked again: the whole explanation, with the trap's own hint.
-	reset.call()
-	call.call()
-	view._process(0.4)
-	_expect(view.semantic_state().counting, "fixture: still checking")
-	view._handle_design_tap(Lesson.socket_center(1) * 2.0)
+	view._process(View.COUNT_TIME + 0.05)
 	view._publish_semantics()
-	for tap in 3:
-		view._handle_design_tap(Lesson.socket_center(1) * 2.0)
-	view._publish_semantics()
-	_expect(view.model.can_call_foreman() and view.model.leak_count == 1 and not view.model.leak_explained, "the trap is back, the first leak was never explained")
-	call.call()
-	view._process(View.COUNT_TIME + 0.01)
-	var again_said: Array[String] = [spoken.call()]
-	for step in 4:
-		_next_step(view)
-		again_said.append(spoken.call())
-	_expect(view.model.leak_count == 2 and view.semantic_state().explain_steps == 5 and again_said == full, "a check cancelled before its explanation gets the whole explanation next time")
-	_expect(spoken.call() == String(view.model.utterance().text) and not String(view.model.utterance().text).begins_with("まだ"), "and its last word is the trap's hint, not 「まだ」")
-	# An explanation ended before its count (here at the marks) is not shown either.
-	reset.call()
-	call.call()
-	view._process(View.COUNT_TIME + 0.01)
-	_next_step(view)
-	_next_step(view)
-	_expect(view.semantic_state().explain_step == 2, "fixture: at the marks step")
-	view._handle_design_tap(Lesson.socket_center(0) * 2.0)
-	view._publish_semantics()
-	for tap in 3:
-		view._handle_design_tap(Lesson.socket_center(0) * 2.0)
-	view._publish_semantics()
-	_expect(not view.model.leak_explained, "an explanation cut before its count is not marked as shown")
-	call.call()
-	view._process(View.COUNT_TIME + 0.01)
-	_expect(view.semantic_state().explain_steps == 5, "so the next leak explains everything again")
-	# Bubble taps to the count count as shown.
-	view._handle_design_tap(bubble)
-	view._handle_design_tap(bubble)
-	view._handle_design_tap(bubble)
-	_expect(view.semantic_state().explain_step == 3, "fixture: the bubble reached the count")
-	view._handle_design_tap(Lesson.socket_center(0) * 2.0)
-	view._publish_semantics()
-	_expect(view.model.leak_explained, "reaching the count by bubble taps counts as shown")
-	# A shown explanation never carries into the next lesson.
-	_expect(not Tutorial.new().leak_explained, "a new model starts unexplained")
-	# The repair cancels the fault: a 「0」 and no mark on the centre, then the real leftovers.
-	reset.call()
-	call.call()
-	view._process(View.COUNT_TIME + 0.01)
-	view._handle_design_tap(Lesson.socket_center(4) * 2.0)
-	view._publish_semantics()
-	var repaired := _marks(view.model)
-	_expect(view.model.cancelled_sockets() == [4] and repaired.zeros >= 1 and not repaired.plan.rings[1].has(4) and _sorted(repaired.plan.rings[1]) == [1, 7], "red on the centre cancels its fault: 「0」 there, marks left on 1 and 7")
-	# The live region reads prose lines on, and closes only count lines.
-	_expect(View._readable("まだ電気がもれているよ。\nあまった印が\nなくなるように直そう。") == "まだ電気がもれているよ。あまった印がなくなるように直そう。", "a sentence split over lines is read as one sentence")
-	_expect(View._readable("電気がもれているよ！\n赤：上の段 0こ→あまり0こ\n青：左の列 1こ→あまり1こ") == "電気がもれているよ！赤：上の段 0こ→あまり0こ。青：左の列 1こ→あまり1こ。", "two colours' counts are read apart")
-	# Reduced motion: no check delay, the same words in order.
+	_expect(not view.semantic_state().check_detail, "a new check does not reopen it")
+	# Reduced motion: no check delay, the detail opens at its final frame.
 	view.reduced_motion = true
 	reset.call()
 	call.call()
-	_expect(not view.semantic_state().counting and spoken.call() == steps[0], "reduced motion starts the explanation at once")
-	_next_step(view)
-	_expect(spoken.call() == full[1], "and goes through the same steps")
+	view._handle_design_tap(bubble)
+	_expect(view.semantic_state().check_detail and view._detail_age >= View.DETAIL_TIME, "reduced motion shows the detail's final frame")
 	view.reduced_motion = false
-	# A safe check is not explained step by step.
+	# A safe check offers it too (a pair vanishing is how the safe board looks).
 	reset.call()
-	_wire(view.model, {1: Tutorial.EMPTY, 7: Tutorial.EMPTY, 4: Tutorial.RED})
+	_wire(view.model, {1: Tutorial.RED, 2: Tutorial.RED, 5: Tutorial.RED, 7: Tutorial.EMPTY})
 	view._publish_semantics()
 	call.call()
-	view._process(View.COUNT_TIME + 0.01)
+	view._process(View.COUNT_TIME + 0.05)
 	view._publish_semantics()
-	_expect(view.semantic_state().explain_step == -1 and view.model.passed() and spoken.call() == "よし、電気はもれてないね。\n上の段の赤い印は0こ。\nあまりなし。", "a pass speaks its count without steps")
+	_expect(view.model.passed() and spoken.call() == "よし、もう外へ抜けないね。\nこれで安心！" and view._detail_available(), "a safe check speaks its plain words and offers the detail")
+	_expect(view._leak_routes.is_empty() and not view._leaks.active, "the view builds no leaving route for a safe board")
+	# Two red columns (0-3-6 and 1-4-7): a chain runs from edge to edge, but it
+	# crosses the top row twice, so the board is safe and nothing leaves.
+	reset.call()
+	_wire(view.model, {0: Tutorial.RED, 3: Tutorial.RED, 6: Tutorial.RED})
+	view._publish_semantics()
+	call.call()
+	view._process(View.COUNT_TIME + 0.05)
+	view._publish_semantics()
+	var chain := preload("res://src/leak_feedback.gd").route(view.model.definition().red_faces, view.model._residual_support(1), 3, true)
+	_expect(not chain.is_empty() and view.model.cut_marks(1).size() == 2, "fixture: an edge-to-edge red chain, two marks on the top row")
+	_expect(view.model.passed() and view._leak_routes.is_empty(), "a chain that crosses the top row twice is safe: no leaving light")
+	view._handle_design_tap(bubble)
+	_expect(spoken.call() == Tutorial.CHECK_DETAIL and view.semantic_state().continue_enabled, "the detail never blocks Continue")
+	# Lesson 7: red leaves (column 1-4-7) while blue's two rows form an
+	# edge-to-edge chain that crosses the left column twice: only red leaves.
+	view.model.stage_index = 6
+	view.model._reset_stage()
+	view.model._record("next_stage", {})
+	view._navigation_guard_until = 0
+	view._publish_semantics()
+	_wire(view.model, {0: Tutorial.BLUE, 1: Tutorial.BOTH, 3: Tutorial.BLUE, 4: Tutorial.BLUE, 5: Tutorial.BLUE, 7: Tutorial.RED})
+	view._publish_semantics()
+	call.call()
+	view._publish_semantics()
+	var blue_chain := preload("res://src/leak_feedback.gd").route(view.model.definition().blue_faces, view.model._residual_support(2), 3, false)
+	_expect(view.model.is_dark() and view.model.inspection.red_crossing and not view.model.inspection.blue_crossing and not blue_chain.is_empty(), "fixture: red leaks, blue has an edge-to-edge chain but is safe")
+	_expect(view._leak_routes.size() == 1 and int(view._leak_routes[0].component) == 1 and view.model.utterance().text == "あっ、まだ赤い電気が\n外へ抜けているよ！", "only red leaves and is named; blue's even chain does not")
 
 
 # Every call-mode lesson's bottom button reads 「チェックして！」 (disabled on a
@@ -1063,10 +1081,10 @@ func _test_counting(view) -> void:
 	view._publish_semantics()
 	view._handle_design_tap(View.PRIMARY_RECT.get_center())
 	view._publish_semantics()
-	_expect(view.semantic_state().counting and view._leak_age < 0.0 and view.semantic_state().explain_step == -1, "lesson 5 checks for 1.0 s too, then explains")
+	_expect(view.semantic_state().counting and view._leak_age < 0.0, "lesson 5 checks for 1.0 s too, then shows the leaving light")
 	view._process(View.COUNT_TIME + 0.05)
 	view._publish_semantics()
-	_expect(not view.semantic_state().counting and view.semantic_state().explain_step == 0, "the explanation starts after the check")
+	_expect(not view.semantic_state().counting and view._leak_age >= 0.0 and view._leak_age < 0.2, "the leaving light starts after the check")
 
 
 # Lesson 1 rings its approved bell once per real pass; other lessons keep
@@ -1124,7 +1142,8 @@ func _run() -> void:
 	_test_inspection_presentation()
 	_test_call_labels()
 	_test_leak_without_counting()
-	_test_counting_lessons()
+	_test_visual_check()
+	_test_check_detail_plan()
 	_test_legend_alignment()
 	_test_socket_wire_crossing()
 	_test_foreman_alignment()
@@ -1177,18 +1196,18 @@ func _run() -> void:
 	view._publish_semantics()
 	view._handle_design_tap(View.PRIMARY_RECT.get_center())
 	view._publish_semantics()
-	_expect(view._leaks.active and view.semantic_state().counting and view._explain_sequence == view.model.trace.size(), "calling the foreman starts the check, then its explanation")
+	_expect(view._leaks.active and view.semantic_state().counting and view._leak_age < 0.0, "calling the foreman starts the check, then its leaving light")
 	view._handle_design_tap(Lesson.socket_center(1) * 2.0)
 	view._publish_semantics()
-	_expect(not view._leaks.active and view._leak_routes.is_empty() and view.model.inspection.is_empty() and view.semantic_state().explain_step == -1, "a tap during the presentation cancels the stale result")
-	_expect(view.model.fault_revealed() and view.model.utterance().kind == "mistake", "the board stays editable with the lesson's dashed hint")
+	_expect(not view._leaks.active and view._leak_routes.is_empty() and view.model.inspection.is_empty() and not view.semantic_state().check_detail, "a tap during the presentation cancels the stale result")
+	_expect(not view.model.fault_revealed() and view.model.utterance().kind == "mistake", "the board stays editable, with no fault reveal in lesson 5")
 	for tap in 3:
 		view._handle_design_tap(Lesson.socket_center(1) * 2.0)
 	view._publish_semantics()
 	_expect(view.model.can_call_foreman() and not view._leaks.active, "returning to the trap needs another call")
 	view._handle_design_tap(View.PRIMARY_RECT.get_center())
 	view._publish_semantics()
-	_expect(view._leaks.active and view.semantic_state().counting and view._explain_sequence == view.model.trace.size() and view._leak_sound_starts <= 2, "a fresh call starts a fresh presentation")
+	_expect(view._leaks.active and view.semantic_state().counting and view._leak_age < 0.0 and view._leak_sound_starts <= 2, "a fresh call starts a fresh presentation")
 	view._handle_design_tap(View.PRIMARY_RECT.get_center())
 	view._publish_semantics()
 	_expect(not view.model.passed() and view._leaks.active, "calling again on the same leaking board does nothing")
@@ -1196,7 +1215,7 @@ func _run() -> void:
 	_test_counting(view)
 	_test_lesson1_bell(view)
 	_test_button_announcement(view)
-	_test_explanation(view)
+	_test_check_detail(view)
 	# The audio server drops stopped playbacks (and their streams) on its own
 	# mixing thread. After this long synchronous run the next frames advance
 	# game time faster than real time, so a fixed timer could end first and
